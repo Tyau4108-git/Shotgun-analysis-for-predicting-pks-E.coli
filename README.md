@@ -175,6 +175,8 @@ cp your_sample_2.fastq data/
 
 #### fastq_to_fasta.py の設定
 
+スクリプトをテキストエディタで開き、以下の部分を修正してください：
+
 ```python
 # ===== ユーザー設定エリア =====
 # 入力ディレクトリ（FASTQファイルがある場所）- 必須修正箇所
@@ -187,8 +189,13 @@ output_base_dir = "/path/to/output/directory"  # ← ここを修正
 
 **設定例：**
 ```python
-input_dir = "/Users/username/data/fastq_files"
-output_base_dir = "/Users/username/results/fasta_converted"
+# macOSの場合
+input_dir = "/Users/username/clb_analysis/data"
+output_base_dir = "/Users/username/clb_analysis/results/fasta_converted"
+
+# Windowsの場合
+input_dir = "C:/Users/username/clb_analysis/data"
+output_base_dir = "C:/Users/username/clb_analysis/results/fasta_converted"
 ```
 
 #### fastaseq.py の設定
@@ -208,9 +215,15 @@ output_folder = "/path/to/output/folder"  # ← ここを修正
 
 **設定例：**
 ```python
-folder = "/Users/username/results/fasta_converted/DRR171459"
+# macOSの場合
+folder = "/Users/username/clb_analysis/results/fasta_converted/DRR171459"
 drr = "DRR171459"
-output_folder = "/Users/username/results/combined_fasta"
+output_folder = "/Users/username/clb_analysis/results/combined_fasta"
+
+# Windowsの場合
+folder = "C:/Users/username/clb_analysis/results/fasta_converted/DRR171459"
+drr = "DRR171459"
+output_folder = "C:/Users/username/clb_analysis/results/combined_fasta"
 ```
 
 #### BlastDB(for loop).sh の設定
@@ -233,10 +246,17 @@ blast_db_folder="/path/to/blast/output"  # ← BLAST結果の保存先
 
 **設定例：**
 ```bash
-blast_dir="/usr/local/bin"  # Macの場合
-input_dir="/Users/username/results/combined_fasta"
+# macOSの場合
+blast_dir="/usr/local/bin"  # またはBLASTのインストール場所
+input_dir="/Users/username/clb_analysis/results/combined_fasta"
 query_file="/Users/username/clb_analysis/references/clb_genes.fna"
-blast_db_folder="/Users/username/results/blast_results"
+blast_db_folder="/Users/username/clb_analysis/results/blast_results"
+
+# Windowsの場合（WSL使用時）
+blast_dir="/mnt/c/blast/bin"
+input_dir="/mnt/c/Users/username/clb_analysis/results/combined_fasta"
+query_file="/mnt/c/Users/username/clb_analysis/references/clb_genes.fna"
+blast_db_folder="/mnt/c/Users/username/clb_analysis/results/blast_results"
 ```
 
 #### Countlead(for loop).py の設定
@@ -253,8 +273,13 @@ output_excel = "/path/to/output/clb_counts.xlsx"  # ← 結果Excel保存先
 
 **設定例：**
 ```python
-input_dir = "/Users/username/results/blast_results"
-output_excel = "/Users/username/results/clb_counts_final.xlsx"
+# macOSの場合
+input_dir = "/Users/username/clb_analysis/results/blast_results"
+output_excel = "/Users/username/clb_analysis/results/clb_counts_final.xlsx"
+
+# Windowsの場合
+input_dir = "C:/Users/username/clb_analysis/results/blast_results"
+output_excel = "C:/Users/username/clb_analysis/results/clb_counts_final.xlsx"
 ```
 
 ### 3.2 設定の確認方法
@@ -267,15 +292,17 @@ python scripts/fastq_to_fasta.py
 
 # 出力例：
 # FASTQ to FASTA 変換スクリプト
-# 入力ディレクトリ: /Users/username/data/fastq_files
-# 出力ディレクトリ: /Users/username/results/fasta_converted
+# 入力ディレクトリ: /Users/username/clb_analysis/data
+# 出力ディレクトリ: /Users/username/clb_analysis/results/fasta_converted
 # --------------------------------------------------
 # 処理を開始しますか？ (y/n):
 ```
 
+エラーが表示された場合は、設定エリアのパスを再確認してください。
+
 ## ステップ4: FASTQ to FASTA変換
 
-### 3.1 なぜ変換が必要か？
+### 4.1 なぜ変換が必要か？
 
 **FASTQ形式の例：**
 ```
@@ -302,6 +329,8 @@ ATGCGATCGATCGATCG
 ```bash
 # まず、スクリプト内のパス設定を修正
 nano scripts/fastq_to_fasta.py
+# または
+code scripts/fastq_to_fasta.py  # Visual Studio Code使用時
 ```
 
 **修正箇所：**
@@ -319,11 +348,11 @@ python scripts/fastq_to_fasta.py
 3. DRR番号ごとにディレクトリを自動作成
 4. FASTQからFASTAへの一括変換
 
-### 3.3 結果の確認
+### 4.3 結果の確認
 
 ```bash
 # 変換されたファイルがあるか確認
-ls results/
+ls results/fasta_converted/
 ```
 
 ## ステップ5: FASTA配列の処理
@@ -352,11 +381,11 @@ python scripts/fastaseq.py
 2. リバースリード（_2.fa）の各配列IDに「:2」を追加
 3. 2つのファイルを1つに結合
 
-### 4.2 実行後の確認
+### 5.3 実行後の確認
 
 ```bash
 # 結合されたファイルの行数を確認
-wc -l results/your_combined_sample.fa
+wc -l results/combined_fasta/your_sample.fa
 ```
 
 ## ステップ6: BLASTデータベースの構築と検索
@@ -391,13 +420,13 @@ bash scripts/"BlastDB(for loop).sh"
 3. 結果をTSV形式とアライメント形式で保存
 4. 処理ログを自動記録
 
-### 5.3 実行時間の目安
+### 6.3 実行時間の目安
 
 - 小さなデータセット（数千リード）: 数分
 - 中規模データセット（数万リード）: 数十分
 - 大規模データセット（数百万リード）: 数時間
 
-### 5.4 検索パラメータの説明
+### 6.4 検索パラメータの説明
 
 | パラメータ | 設定値 | 説明 |
 |-----------|--------|------|
@@ -432,28 +461,28 @@ python scripts/"Countlead(for loop).py"
 3. DRR番号ごとに結果を整理
 4. Excelファイルとして結果を出力
 
-### 6.2 出力ファイルの形式
+### 7.3 出力ファイルの形式
 
 生成されるExcelファイルには以下の情報が含まれます：
 
 | 列 | 内容 | 説明 |
 |----|------|------|
-| DRR | サンプルID | DRR番号（例：DRR171459） |
+| Sample | サンプルID | DRR番号（例：DRR171459） |
 | clbA | リード数 | clbA遺伝子のユニークリード数 |
 | clbB | リード数 | clbB遺伝子のユニークリード数 |
 | ... | ... | ... |
 | clbS | リード数 | clbS遺伝子のユニークリード数 |
 
-### 6.3 結果の確認
+### 7.4 結果の確認
 
 ```bash
 # 結果ファイルの確認
-ls -la results/clb_counts_new.xlsx
+ls -la results/clb_counts_final.xlsx
 ```
 
 ## ステップ8: 結果の解釈
 
-### 7.1 結果の意味
+### 8.1 結果の意味
 
 **高いリード数を示す遺伝子:**
 - そのサンプルに多く存在する可能性が高い
@@ -463,13 +492,13 @@ ls -la results/clb_counts_new.xlsx
 - 存在量が少ない、または
 - 配列の類似度が低い（検出が困難）
 
-### 7.2 統計的解析のヒント
+### 8.2 統計的解析のヒント
 
 1. **正規化**: サンプル間のシーケンシング深度の違いを考慮
 2. **比較分析**: 健康群と疾患群での遺伝子存在量の比較
 3. **相関分析**: 異なるclb遺伝子間の関係性を調査
 
-### 7.3 注意点
+### 8.3 注意点
 
 1. **偽陽性の可能性**: 類似した配列を持つ他の遺伝子との誤認
 2. **検出限界**: 存在量が極めて少ない場合は検出できない
@@ -490,10 +519,18 @@ clb_analysis/
 ├── references/
 │   └── clb_genes.fna
 └── results/
-    ├── FASTA_files/
-    ├── BLAST_databases/
-    ├── BLAST_results/
-    └── clb_counts_new.xlsx
+    ├── fasta_converted/
+    │   └── DRR123456/
+    │       ├── DRR123456_1.fa
+    │       └── DRR123456_2.fa
+    ├── combined_fasta/
+    │   └── DRR123456.fa
+    ├── blast_results/
+    │   └── DRR123456/
+    │       ├── DRR123456.tsv
+    │       ├── DRR123456_alignment.txt
+    │       └── (database files)
+    └── clb_counts_final.xlsx
 ```
 
 ## 🔧 カスタマイズのヒント
@@ -519,6 +556,52 @@ clb_analysis/
 -evalue 1e-3     # より緩いE値
 -perc_identity 90  # より低い類似度許容
 ```
+
+## 🚨 よくあるエラーと対処法
+
+### 1. 「command not found」エラー
+**症状**: `blastn: command not found`
+**対処法**: 
+- BLASTが正しくインストールされているか確認
+- PATHの設定を確認
+- `which blastn`でパスを確認
+
+### 2. 「No such file or directory」エラー
+**症状**: ファイルやディレクトリが見つからない
+**対処法**:
+- スクリプト内のパス設定を確認
+- ファイル名のスペルミスをチェック
+- 相対パスではなく絶対パスを使用
+
+### 3. 「Permission denied」エラー
+**症状**: ファイルの実行権限がない
+**対処法**:
+```bash
+chmod +x scripts/"BlastDB(for loop).sh"
+```
+
+### 4. Pythonライブラリのエラー
+**症状**: `ModuleNotFoundError: No module named 'pandas'`
+**対処法**:
+```bash
+pip install pandas openpyxl
+```
+
+### 5. メモリ不足エラー
+**症状**: BLASTが途中で停止
+**対処法**:
+- データサイズを小さくする
+- より高性能なコンピュータを使用
+- `-num_threads`を減らす
+
+## 📞 サポート
+
+問題が解決しない場合は、以下の情報と共にIssueを作成してください：
+
+1. **OS**: Windows/Mac/Linux
+2. **エラーメッセージ**: 正確なエラーメッセージをコピー
+3. **実行したコマンド**: 何を実行したときにエラーが発生したか
+4. **ファイル構造**: `ls -la`の出力結果
 
 ## 📄 ライセンス
 
