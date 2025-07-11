@@ -167,7 +167,113 @@ cp your_sample_1.fastq data/
 cp your_sample_2.fastq data/
 ```
 
-## ステップ3: FASTQ to FASTA変換
+## ステップ3: スクリプトの設定
+
+### 3.1 各スクリプトの設定が必要な箇所
+
+各スクリプトには「**ユーザー設定エリア**」が明記されており、この部分のパスを必ず修正する必要があります。
+
+#### fastq_to_fasta.py の設定
+
+```python
+# ===== ユーザー設定エリア =====
+# 入力ディレクトリ（FASTQファイルがある場所）- 必須修正箇所
+input_dir = "/path/to/your/fastq/files"  # ← ここを修正
+
+# 出力ベースディレクトリ - 必須修正箇所  
+output_base_dir = "/path/to/output/directory"  # ← ここを修正
+# ===== ユーザー設定エリア終了 =====
+```
+
+**設定例：**
+```python
+input_dir = "/Users/username/data/fastq_files"
+output_base_dir = "/Users/username/results/fasta_converted"
+```
+
+#### fastaseq.py の設定
+
+```python
+# ===== ユーザー設定エリア =====
+# 対象のDRRファイルが存在するフォルダー - 必須修正箇所
+folder = "/path/to/your/fasta/folder"  # ← ここを修正
+
+# DRR番号 - 必須修正箇所
+drr = "DRR123456"  # ← ここを修正（例: DRR171459）
+
+# 結合したファイルの保存先フォルダー - 必須修正箇所
+output_folder = "/path/to/output/folder"  # ← ここを修正
+# ===== ユーザー設定エリア終了 =====
+```
+
+**設定例：**
+```python
+folder = "/Users/username/results/fasta_converted/DRR171459"
+drr = "DRR171459"
+output_folder = "/Users/username/results/combined_fasta"
+```
+
+#### BlastDB(for loop).sh の設定
+
+```bash
+# ===== ユーザー設定エリア =====
+# 1. BLAST実行ファイルのディレクトリ - 必須修正箇所
+blast_dir="/path/to/blast/bin"  # ← BLASTインストールディレクトリ
+
+# 2. 入力ファイルのディレクトリ - 必須修正箇所
+input_dir="/path/to/combined/fasta/files"  # ← 結合FASTAファイルのディレクトリ
+
+# 3. クエリファイルの指定 - 必須修正箇所
+query_file="/path/to/clb_genes.fna"  # ← clb_genes.fnaファイルのフルパス
+
+# 4. BLAST DBと出力ファイルの保存先 - 必須修正箇所
+blast_db_folder="/path/to/blast/output"  # ← BLAST結果の保存先
+# ===== ユーザー設定エリア終了 =====
+```
+
+**設定例：**
+```bash
+blast_dir="/usr/local/bin"  # Macの場合
+input_dir="/Users/username/results/combined_fasta"
+query_file="/Users/username/clb_analysis/references/clb_genes.fna"
+blast_db_folder="/Users/username/results/blast_results"
+```
+
+#### Countlead(for loop).py の設定
+
+```python
+# ===== ユーザー設定エリア =====
+# 入力ディレクトリのパス - 必須修正箇所
+input_dir = "/path/to/blast/results"  # ← BLAST結果ディレクトリ
+
+# 出力先Excelファイルのパス - 必須修正箇所
+output_excel = "/path/to/output/clb_counts.xlsx"  # ← 結果Excel保存先
+# ===== ユーザー設定エリア終了 =====
+```
+
+**設定例：**
+```python
+input_dir = "/Users/username/results/blast_results"
+output_excel = "/Users/username/results/clb_counts_final.xlsx"
+```
+
+### 3.2 設定の確認方法
+
+各スクリプトを実行すると、設定されたパスが正しいかどうかを自動チェックします：
+
+```bash
+# 例：fastq_to_fasta.py実行時
+python scripts/fastq_to_fasta.py
+
+# 出力例：
+# FASTQ to FASTA 変換スクリプト
+# 入力ディレクトリ: /Users/username/data/fastq_files
+# 出力ディレクトリ: /Users/username/results/fasta_converted
+# --------------------------------------------------
+# 処理を開始しますか？ (y/n):
+```
+
+## ステップ4: FASTQ to FASTA変換
 
 ### 3.1 なぜ変換が必要か？
 
@@ -189,20 +295,23 @@ ATGCGATCGATCGATCG
 > - FASTQには品質情報（3行目と4行目）が含まれるが、BLAST検索には不要
 > - FASTAはよりシンプルで、BLAST検索に適した形式
 
-### 3.2 自動変換スクリプトの実行
+### 4.2 スクリプトの設定と実行
 
 提供された`fastq_to_fasta.py`スクリプトを使用します：
 
 ```bash
-# スクリプトの実行権限を付与（Mac/Linuxの場合）
-chmod +x scripts/fastq_to_fasta.py
-
-# スクリプトを実行
-python scripts/fastq_to_fasta.py
+# まず、スクリプト内のパス設定を修正
+nano scripts/fastq_to_fasta.py
 ```
 
-> **💡 重要**
-> スクリプト内のパス設定（`input_dir`と`output_base_dir`）をあなたの環境に合わせて修正する必要があります。
+**修正箇所：**
+- `input_dir`: あなたのFASTQファイルがあるディレクトリ
+- `output_base_dir`: 変換されたFASTAファイルの出力先
+
+**修正後、スクリプトを実行：**
+```bash
+python scripts/fastq_to_fasta.py
+```
 
 **スクリプトが実行する処理：**
 1. 指定ディレクトリ内のFASTQファイルを自動検出
@@ -217,18 +326,26 @@ python scripts/fastq_to_fasta.py
 ls results/
 ```
 
-## ステップ4: FASTA配列の処理
+## ステップ5: FASTA配列の処理
 
-### 4.1 ペアードリードの結合
+### 5.1 スクリプトの設定
 
-`fastaseq.py`スクリプトを使用してフォワードリードとリバースリードを結合します：
+`fastaseq.py`スクリプト内の設定を修正します：
+
+```bash
+nano scripts/fastaseq.py
+```
+
+**修正箇所：**
+- `folder`: FASTA変換されたファイルがあるディレクトリ
+- `drr`: 処理したいDRR番号
+- `output_folder`: 結合されたファイルの出力先
+
+### 5.2 ペアードリードの結合
 
 ```bash
 python scripts/fastaseq.py
 ```
-
-> **💡 重要**
-> スクリプト内のファイルパスをあなたのデータに合わせて修正してください。
 
 **スクリプトが実行する処理：**
 1. フォワードリード（_1.fa）の各配列IDに「:1」を追加
@@ -242,23 +359,23 @@ python scripts/fastaseq.py
 wc -l results/your_combined_sample.fa
 ```
 
-## ステップ5: BLASTデータベースの構築と検索
+## ステップ6: BLASTデータベースの構築と検索
 
-### 5.1 スクリプトの設定
+### 6.1 スクリプトの設定
 
 `BlastDB(for loop).sh`スクリプトの設定を確認・修正してください：
 
 ```bash
-# スクリプトをテキストエディタで開く
 nano scripts/"BlastDB(for loop).sh"
 ```
 
-**修正が必要な項目：**
+**修正が必要な項目（ユーザー設定エリア内）：**
+- `blast_dir`: BLASTプログラムのインストール場所
 - `input_dir`: 結合されたFASTAファイルがあるディレクトリ
-- `query_file`: clb_genes.fnaファイルのパス
-- `blast_db_folder`: BLASTデータベースの出力先
+- `query_file`: clb_genes.fnaファイルのフルパス
+- `blast_db_folder`: BLAST結果の保存先ディレクトリ
 
-### 5.2 スクリプトの実行
+### 6.2 スクリプトの実行
 
 ```bash
 # 実行権限を付与
@@ -289,18 +406,25 @@ bash scripts/"BlastDB(for loop).sh"
 | `-max_target_seqs` | 10000000 | 大量のヒットを許可 |
 | `-num_threads` | 2 | 並列処理数 |
 
-## ステップ6: 結果の集計
+## ステップ7: 結果の集計
 
-### 6.1 集計スクリプトの実行
+### 7.1 スクリプトの設定
 
-`Countlead(for loop).py`スクリプトを使用して、各clb遺伝子のリード数を集計します：
+`Countlead(for loop).py`スクリプトの設定を修正します：
+
+```bash
+nano scripts/"Countlead(for loop).py"
+```
+
+**修正箇所：**
+- `input_dir`: BLAST結果ファイル（*_alignment.txt）があるディレクトリ
+- `output_excel`: 結果を保存するExcelファイルのパス
+
+### 7.2 集計スクリプトの実行
 
 ```bash
 python scripts/"Countlead(for loop).py"
 ```
-
-> **💡 重要**
-> スクリプト内の`input_dir`と`output_excel`のパスをあなたの環境に合わせて修正してください。
 
 **スクリプトが実行する処理：**
 1. BLAST結果ファイル（*_alignment.txt）を自動検出
@@ -327,7 +451,7 @@ python scripts/"Countlead(for loop).py"
 ls -la results/clb_counts_new.xlsx
 ```
 
-## ステップ7: 結果の解釈
+## ステップ8: 結果の解釈
 
 ### 7.1 結果の意味
 
