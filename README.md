@@ -1,5 +1,3 @@
-# Shotgun-analysis-for-predicting-pks-E.coli
-
 # clb遺伝子解析マニュアル
 
 メタゲノムシーケンシングデータからclb遺伝子の存在量を定量解析するためのステップバイステップガイド
@@ -17,20 +15,33 @@
 
 ### 絶対に必要なもの
 - **BLAST+** (version 2.16.0以降推奨) - DNA配列の検索ツール
-- **Perl** - プログラミング言語（データ変換に使用）
+- **Python 3.6以降** - スクリプト実行用
 - **ターミナル/コマンドプロンプト** - コンピュータにコマンドを直接入力するツール
+
+### Pythonライブラリ
+```bash
+pip install pandas openpyxl
+```
 
 ### あると便利なもの
 - **bunzip2/gunzip** - 圧縮ファイルを解凍するツール
 
 ## 📋 事前準備
 
+### GitHubからファイルをダウンロード
+
+このリポジトリから以下のファイルをダウンロードしてください：
+
+1. **fastq_to_fasta.py** - FASTQからFASTA変換スクリプト
+2. **fastaseq.py** - FASTA配列処理スクリプト
+3. **BlastDB(for loop).sh** - BLASTデータベース構築・検索スクリプト
+4. **clb_genes.fna** - clb遺伝子参照配列ファイル
+5. **Countlead(for loop).py** - 結果集計スクリプト
+
 ### 用意するファイル
-1. **メタゲノムデータ** (FASTQファイル)
-   - 例：`sample_1.fastq`（フォワードリード）
-   - 例：`sample_2.fastq`（リバースリード）
-2. **clb遺伝子の参照配列** (FASTAファイル)
-   - 例：`clb_genes.fa`
+- **メタゲノムデータ** (FASTQファイル)
+  - 例：`sample_1.fastq`（フォワードリード）
+  - 例：`sample_2.fastq`（リバースリード）
 
 > **💡 ファイル形式の説明**
 > - **FASTQ**: シーケンシング機械から出力される生データ。DNA配列とその品質情報を含む
@@ -117,37 +128,46 @@ Package: blast 2.16.0, build Jun 25 2024 11:53:51
 - PATHの設定が必要かもしれません
 - 管理者権限でのインストールが必要かもしれません
 
-## ステップ2: 参照配列の準備
+### 1.5 Pythonライブラリのインストール
 
-### 2.1 clb遺伝子配列の取得
-
-#### 方法1: NCBIから取得
-1. [NCBI Nucleotide](https://www.ncbi.nlm.nih.gov/nucleotide/)にアクセス
-2. 検索ボックスに`clb gene`と入力
-3. 目的の遺伝子を選択
-4. 「FASTA」形式でダウンロード
-
-#### 方法2: KEGGから取得
-1. [KEGG](https://www.kegg.jp/)にアクセス
-2. 遺伝子データベースで検索
-3. FASTA形式でダウンロード
-
-### 2.2 FASTAファイルの例
-
-```fasta
->clbA_gene_example
-ATGAAACCGCTGATTGAAGAAGCGGTGAAAGCGATTGAAGAAGCGGTGAAAGCG
-ATTGAAGAAGCGGTGAAAGCGATTGAAGAAGCGGTGAAAGCGATTGAAGAAGCG
->clbB_gene_example
-ATGCCCGCTGATTGAAGAAGCGGTGAAAGCGATTGAAGAAGCGGTGAAAGCG
-ATTGAAGAAGCGGTGAAAGCGATTGAAGAAGCGGTGAAAGCGATTGAAGAAGCG
+```bash
+pip install pandas openpyxl
 ```
 
-> **💡 説明**
-> - `>`で始まる行は配列の名前
-> - 次の行からが実際のDNA配列（A, T, G, Cの文字列）
+## ステップ2: 作業ディレクトリの準備
 
-## ステップ3: FASTQ to FASTA変換スクリプトの準備
+### 2.1 ディレクトリ構造の作成
+
+```bash
+# 解析用のフォルダを作成
+mkdir clb_analysis
+cd clb_analysis
+
+# 必要なフォルダを作成
+mkdir data
+mkdir scripts
+mkdir results
+mkdir references
+```
+
+### 2.2 ファイルの配置
+
+```bash
+# GitHubからダウンロードしたスクリプトをscriptsフォルダに配置
+cp fastq_to_fasta.py scripts/
+cp fastaseq.py scripts/
+cp "BlastDB(for loop).sh" scripts/
+cp "Countlead(for loop).py" scripts/
+
+# 参照配列ファイルをreferencesフォルダに配置
+cp clb_genes.fna references/
+
+# あなたのメタゲノムデータをdataフォルダに配置
+cp your_sample_1.fastq data/
+cp your_sample_2.fastq data/
+```
+
+## ステップ3: FASTQ to FASTA変換
 
 ### 3.1 なぜ変換が必要か？
 
@@ -169,265 +189,147 @@ ATGCGATCGATCGATCG
 > - FASTQには品質情報（3行目と4行目）が含まれるが、BLAST検索には不要
 > - FASTAはよりシンプルで、BLAST検索に適した形式
 
-### 3.2 変換スクリプトの作成
+### 3.2 自動変換スクリプトの実行
 
-テキストエディタ（メモ帳、TextEdit、nano等）で新しいファイルを作成し、以下の内容を貼り付けて`fastq2fasta.pl`として保存：
-
-```perl
-use strict;
-
-if ($#ARGV != 0) {
-    die "使用方法: perl fastq2fasta.pl ファイル名.fastq\n";
-}
-
-if ($ARGV[0] =~ s/\.gz$//) {
-    open (FI, "zcat $ARGV[0].gz |") || die "ファイル $ARGV[0].gz が見つかりません。\n";
-} else {
-    open (FI, "cat $ARGV[0] |") || die "ファイル $ARGV[0] が見つかりません。\n";
-}
-
-$ARGV[0] =~ s/\.fastq$//;
-$ARGV[0] =~ /_(\d)$/;
-my $p = $1;
-open (FO, "> $ARGV[0].fa");
-
-while (<FI>) {
-    s/^@(\S+).*$/>$1:$p/;
-    print FO;
-    $_ = <FI>;
-    print FO;
-    $_ = <FI>;
-    $_ = <FI>;
-}
-
-close FI;
-close FO;
-```
-
-### 3.3 スクリプトの実行権限を付与（Mac/Linuxの場合）
+提供された`fastq_to_fasta.py`スクリプトを使用します：
 
 ```bash
-chmod +x fastq2fasta.pl
+# スクリプトの実行権限を付与（Mac/Linuxの場合）
+chmod +x scripts/fastq_to_fasta.py
+
+# スクリプトを実行
+python scripts/fastq_to_fasta.py
 ```
 
-## ステップ4: FASTQデータの処理
+> **💡 重要**
+> スクリプト内のパス設定（`input_dir`と`output_base_dir`）をあなたの環境に合わせて修正する必要があります。
 
-### 4.1 作業ディレクトリの準備
+**スクリプトが実行する処理：**
+1. 指定ディレクトリ内のFASTQファイルを自動検出
+2. 圧縮ファイル（.bz2, .gz）の自動解凍対応
+3. DRR番号ごとにディレクトリを自動作成
+4. FASTQからFASTAへの一括変換
 
-```bash
-# 解析用のフォルダを作成
-mkdir clb_analysis
-cd clb_analysis
+### 3.3 結果の確認
 
-# データ用のフォルダを作成
-mkdir data
-mkdir results
-```
-
-### 4.2 FASTQファイルの配置
-
-あなたのメタゲノムデータファイルを`data`フォルダに配置してください。
-
-**典型的なファイル名の例：**
-- `sample_1.fastq` (フォワードリード)
-- `sample_2.fastq` (リバースリード)
-
-### 4.3 圧縮ファイルの解凍（必要に応じて）
-
-```bash
-# bz2形式の場合
-bunzip2 data/sample_1.fastq.bz2
-bunzip2 data/sample_2.fastq.bz2
-
-# gz形式の場合
-gunzip data/sample_1.fastq.gz
-gunzip data/sample_2.fastq.gz
-```
-
-### 4.4 FASTQ to FASTA変換
-
-```bash
-# フォワードリードの変換
-perl fastq2fasta.pl data/sample_1.fastq
-
-# リバースリードの変換
-perl fastq2fasta.pl data/sample_2.fastq
-```
-
-**実行後に確認：**
 ```bash
 # 変換されたファイルがあるか確認
-ls data/
+ls results/
 ```
 
-以下のようなファイルが作成されているはずです：
-- `sample_1.fa`
-- `sample_2.fa`
+## ステップ4: FASTA配列の処理
 
-### 4.5 FASTAファイルの連結
+### 4.1 ペアードリードの結合
+
+`fastaseq.py`スクリプトを使用してフォワードリードとリバースリードを結合します：
 
 ```bash
-# 2つのファイルを1つに結合
-cp data/sample_1.fa data/sample_combined.fa
-cat data/sample_2.fa >> data/sample_combined.fa
+python scripts/fastaseq.py
 ```
 
-> **💡 説明**
-> - `cp`: ファイルをコピー
-> - `cat`: ファイルの内容を表示（または結合）
-> - `>>`: 既存のファイルの末尾に追加
+> **💡 重要**
+> スクリプト内のファイルパスをあなたのデータに合わせて修正してください。
 
-**結果の確認：**
-```bash
-# ファイルの行数を確認
-wc -l data/sample_combined.fa
-```
+**スクリプトが実行する処理：**
+1. フォワードリード（_1.fa）の各配列IDに「:1」を追加
+2. リバースリード（_2.fa）の各配列IDに「:2」を追加
+3. 2つのファイルを1つに結合
 
-## ステップ5: BLAST データベースの作成
-
-### 5.1 データベース作成の実行
+### 4.2 実行後の確認
 
 ```bash
-makeblastdb -in data/sample_combined.fa -dbtype nucl -out data/sample_db -title sample_database -parse_seqids
+# 結合されたファイルの行数を確認
+wc -l results/your_combined_sample.fa
 ```
 
-> **💡 パラメータの説明**
-> - `-in`: 入力ファイル
-> - `-dbtype nucl`: DNA配列データベース
-> - `-out`: 出力データベース名
-> - `-title`: データベースのタイトル
-> - `-parse_seqids`: 配列IDを解析
+## ステップ5: BLASTデータベースの構築と検索
 
-### 5.2 データベース作成の確認
+### 5.1 スクリプトの設定
+
+`BlastDB(for loop).sh`スクリプトの設定を確認・修正してください：
 
 ```bash
-# データベースファイルが作成されたか確認
-ls data/sample_db*
+# スクリプトをテキストエディタで開く
+nano scripts/"BlastDB(for loop).sh"
 ```
 
-以下のようなファイルが作成されているはずです：
-- `sample_db.nhr`
-- `sample_db.nin`
-- `sample_db.nsq`
+**修正が必要な項目：**
+- `input_dir`: 結合されたFASTAファイルがあるディレクトリ
+- `query_file`: clb_genes.fnaファイルのパス
+- `blast_db_folder`: BLASTデータベースの出力先
 
-## ステップ6: BLAST検索の実行
-
-### 6.1 BLAST検索パラメータの説明
-
-| パラメータ | 意味 | 設定値 | 説明 |
-|-----------|------|--------|------|
-| `-outfmt` | 出力形式 | 6 | タブ区切りの表形式 |
-| `-evalue` | E値閾値 | 1e-10 | 統計的有意性（小さいほど厳密） |
-| `-max_target_seqs` | 最大結果数 | 10000000 | 大量のヒットを許可 |
-| `-perc_identity` | 類似度 | 95 | 95%以上の配列類似度 |
-| `-num_threads` | 使用CPU数 | 2 | 並列処理数 |
-
-### 6.2 BLAST検索の実行
+### 5.2 スクリプトの実行
 
 ```bash
-blastn -query clb_genes.fa -db data/sample_db -out results/blast_results.txt \
-       -outfmt 6 \
-       -evalue 1e-10 \
-       -max_target_seqs 10000000 \
-       -perc_identity 95 \
-       -num_threads 2
+# 実行権限を付与
+chmod +x scripts/"BlastDB(for loop).sh"
+
+# スクリプトを実行
+bash scripts/"BlastDB(for loop).sh"
 ```
 
-### 6.3 実行時間の目安
+**スクリプトが実行する処理：**
+1. 各FASTAファイルに対してBLASTデータベースを作成
+2. clb遺伝子配列をクエリとしてBLAST検索を実行
+3. 結果をTSV形式とアライメント形式で保存
+4. 処理ログを自動記録
+
+### 5.3 実行時間の目安
 
 - 小さなデータセット（数千リード）: 数分
 - 中規模データセット（数万リード）: 数十分
 - 大規模データセット（数百万リード）: 数時間
 
-### 6.4 結果ファイルの確認
+### 5.4 検索パラメータの説明
+
+| パラメータ | 設定値 | 説明 |
+|-----------|--------|------|
+| `-evalue` | 1e-5 | 統計的有意性の閾値 |
+| `-perc_identity` | 97 | 97%以上の配列類似度を要求 |
+| `-max_target_seqs` | 10000000 | 大量のヒットを許可 |
+| `-num_threads` | 2 | 並列処理数 |
+
+## ステップ6: 結果の集計
+
+### 6.1 集計スクリプトの実行
+
+`Countlead(for loop).py`スクリプトを使用して、各clb遺伝子のリード数を集計します：
 
 ```bash
-# 結果ファイルの最初の10行を表示
-head results/blast_results.txt
-
-# 結果ファイルの行数を確認
-wc -l results/blast_results.txt
+python scripts/"Countlead(for loop).py"
 ```
 
-## ステップ7: 結果の解析
+> **💡 重要**
+> スクリプト内の`input_dir`と`output_excel`のパスをあなたの環境に合わせて修正してください。
 
-### 7.1 BLAST結果の読み方
+**スクリプトが実行する処理：**
+1. BLAST結果ファイル（*_alignment.txt）を自動検出
+2. 各clb遺伝子（clbA～clbS）のユニークなリード数をカウント
+3. DRR番号ごとに結果を整理
+4. Excelファイルとして結果を出力
 
-出力ファイルの各列の意味：
+### 6.2 出力ファイルの形式
 
-| 列番号 | 項目 | 説明 |
-|--------|------|------|
-| 1 | Query ID | 検索に使ったclb遺伝子の名前 |
-| 2 | Subject ID | ヒットしたメタゲノムリードの名前 |
-| 3 | % Identity | 配列類似度（パーセント） |
-| 4 | Alignment Length | 一致した配列の長さ |
-| 5 | Mismatches | 不一致の数 |
-| 6 | Gap Opens | ギャップの数 |
-| 7 | Query Start | 検索配列の開始位置 |
-| 8 | Query End | 検索配列の終了位置 |
-| 9 | Subject Start | ヒット配列の開始位置 |
-| 10 | Subject End | ヒット配列の終了位置 |
-| 11 | E-value | 統計的有意性 |
-| 12 | Bit Score | アライメントスコア |
+生成されるExcelファイルには以下の情報が含まれます：
 
-### 7.2 簡単な結果集計
+| 列 | 内容 | 説明 |
+|----|------|------|
+| DRR | サンプルID | DRR番号（例：DRR171459） |
+| clbA | リード数 | clbA遺伝子のユニークリード数 |
+| clbB | リード数 | clbB遺伝子のユニークリード数 |
+| ... | ... | ... |
+| clbS | リード数 | clbS遺伝子のユニークリード数 |
+
+### 6.3 結果の確認
 
 ```bash
-# 各clb遺伝子にヒットした数を数える
-cut -f1 results/blast_results.txt | sort | uniq -c
-
-# 最も多くヒットした遺伝子を表示
-cut -f1 results/blast_results.txt | sort | uniq -c | sort -nr | head -5
+# 結果ファイルの確認
+ls -la results/clb_counts_new.xlsx
 ```
 
-> **💡 コマンドの説明**
-> - `cut -f1`: 1列目（Query ID）だけを抽出
-> - `sort`: データを並べ替え
-> - `uniq -c`: 重複を削除して数を数える
-> - `sort -nr`: 数の大きい順に並べ替え
-> - `head -5`: 最初の5行を表示
+## ステップ7: 結果の解釈
 
-### 7.3 詳細な解析用スクリプト（オプション）
-
-より詳細な解析を行いたい場合は、以下のPerlスクリプトを使用できます：
-
-```perl
-#!/usr/bin/perl
-use strict;
-
-# BLAST結果ファイルを読み込み
-my $blast_file = $ARGV[0];
-open(my $fh, '<', $blast_file) or die "ファイルが開けません: $!";
-
-my %gene_counts;
-my %unique_reads;
-
-while (my $line = <$fh>) {
-    chomp $line;
-    my @fields = split /\t/, $line;
-    my $gene = $fields[0];
-    my $read = $fields[1];
-    
-    # 重複するリードは1回だけカウント
-    my $key = "$gene\t$read";
-    if (!exists $unique_reads{$key}) {
-        $gene_counts{$gene}++;
-        $unique_reads{$key} = 1;
-    }
-}
-
-close $fh;
-
-# 結果を出力
-print "Gene\tCount\n";
-foreach my $gene (sort keys %gene_counts) {
-    print "$gene\t$gene_counts{$gene}\n";
-}
-```
-
-## 📊 結果の解釈
-
-### 7.4 結果の意味
+### 7.1 結果の意味
 
 **高いリード数を示す遺伝子:**
 - そのサンプルに多く存在する可能性が高い
@@ -437,15 +339,66 @@ foreach my $gene (sort keys %gene_counts) {
 - 存在量が少ない、または
 - 配列の類似度が低い（検出が困難）
 
-### 7.5 注意点
+### 7.2 統計的解析のヒント
+
+1. **正規化**: サンプル間のシーケンシング深度の違いを考慮
+2. **比較分析**: 健康群と疾患群での遺伝子存在量の比較
+3. **相関分析**: 異なるclb遺伝子間の関係性を調査
+
+### 7.3 注意点
 
 1. **偽陽性の可能性**: 類似した配列を持つ他の遺伝子との誤認
 2. **検出限界**: 存在量が極めて少ない場合は検出できない
 3. **配列品質**: 低品質なリードは正確な検索ができない
 
+## 📁 完了後のディレクトリ構造
+
+```
+clb_analysis/
+├── data/
+│   ├── your_sample_1.fastq
+│   └── your_sample_2.fastq
+├── scripts/
+│   ├── fastq_to_fasta.py
+│   ├── fastaseq.py
+│   ├── BlastDB(for loop).sh
+│   └── Countlead(for loop).py
+├── references/
+│   └── clb_genes.fna
+└── results/
+    ├── FASTA_files/
+    ├── BLAST_databases/
+    ├── BLAST_results/
+    └── clb_counts_new.xlsx
+```
+
+## 🔧 カスタマイズのヒント
+
+### 大量サンプルの処理
+
+複数のサンプルを効率的に処理するために：
+
+1. **バッチ処理**: 提供されたスクリプトは既にループ処理に対応
+2. **並列処理**: BLASTの`-num_threads`パラメータを調整
+3. **メモリ管理**: 大きなファイルを分割して処理
+
+### パラメータの調整
+
+**より厳密な検索の場合:**
+```bash
+-evalue 1e-10    # より厳しいE値
+-perc_identity 99  # より高い類似度要求
+```
+
+**より広範囲な検索の場合:**
+```bash
+-evalue 1e-3     # より緩いE値
+-perc_identity 90  # より低い類似度許容
+```
+
 ## 📄 ライセンス
 
-このマニュアルは研究・教育目的での使用を想定しています。商用利用については適切なライセンスを確認してください。
+このマニュアルとスクリプトは研究・教育目的での使用を想定しています。商用利用については適切なライセンスを確認してください。
 
 ---
 
