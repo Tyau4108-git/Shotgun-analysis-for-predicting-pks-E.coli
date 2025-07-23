@@ -1,15 +1,13 @@
 # clb遺伝子解析マニュアル
 
-メタゲノムシーケンシングデータからclb遺伝子の存在量を定量解析するためのステップバイステップガイド
-
-## 📖 このマニュアルについて
-
-このマニュアルは、**プログラミング経験がない方**でも腸内細菌のメタゲノムデータから特定の遺伝子（clb遺伝子）を検索・定量できるように作成されています。
+ショットガンメタゲノムシーケンシングデータからコリバクチン産生菌（pks+大腸菌）のclb遺伝子クラスターを定量解析するためのステップバイステップガイド
 
 ## 🎯 このマニュアルで何をするか？
+
 1. 腸内細菌のDNA配列データ（FASTQファイル）を準備
-2. clb遺伝子の配列と照合（BLAST検索）
-3. 各遺伝子がどれくらい存在するかを数える
+2. 19種類のclb遺伝子（clbA～clbS）との配列照合（BLAST検索）
+3. 各遺伝子の存在量を定量し、pks+大腸菌の保有状況を判定
+4. 複数の判定基準による結果比較（単一遺伝子 vs クラスター全体）
 
 ## 🛠️ 必要なソフトウェア
 
@@ -35,7 +33,7 @@ pip install pandas openpyxl
 1. **fastq_to_fasta.py** - FASTQからFASTA変換スクリプト
 2. **fastaseq.py** - FASTA配列処理スクリプト
 3. **BlastDB(for loop).sh** - BLASTデータベース構築・検索スクリプト
-4. **clb_genes.fna** - clb遺伝子参照配列ファイル
+4. **clb_genes.fna** - clb遺伝子参照配列ファイル（19遺伝子）
 5. **Countlead(for loop).py** - 結果集計スクリプト
 
 ### 用意するファイル
@@ -187,17 +185,6 @@ output_base_dir = "/path/to/output/directory"  # ← ここを修正
 # ===== ユーザー設定エリア終了 =====
 ```
 
-**設定例：**
-```python
-# macOSの場合
-input_dir = "/Users/username/clb_analysis/data"
-output_base_dir = "/Users/username/clb_analysis/results/fasta_converted"
-
-# Windowsの場合
-input_dir = "C:/Users/username/clb_analysis/data"
-output_base_dir = "C:/Users/username/clb_analysis/results/fasta_converted"
-```
-
 #### fastaseq.py の設定
 
 ```python
@@ -213,92 +200,60 @@ output_folder = "/path/to/output/folder"  # ← ここを修正
 # ===== ユーザー設定エリア終了 =====
 ```
 
-**設定例：**
-```python
-# macOSの場合
-folder = "/Users/username/clb_analysis/results/fasta_converted/DRR171459"
-drr = "DRR171459"
-output_folder = "/Users/username/clb_analysis/results/combined_fasta"
-
-# Windowsの場合
-folder = "C:/Users/username/clb_analysis/results/fasta_converted/DRR171459"
-drr = "DRR171459"
-output_folder = "C:/Users/username/clb_analysis/results/combined_fasta"
-```
-
-#### BlastDB(for loop).sh の設定
+#### BlastDB(for loop).sh の設定（重要：研究用パラメータ調整）
 
 ```bash
 # ===== ユーザー設定エリア =====
 # 1. BLAST実行ファイルのディレクトリ - 必須修正箇所
-blast_dir="/path/to/blast/bin"  # ← BLASTインストールディレクトリ
+blast_dir="/path/to/blast/bin"
 
 # 2. 入力ファイルのディレクトリ - 必須修正箇所
-input_dir="/path/to/combined/fasta/files"  # ← 結合FASTAファイルのディレクトリ
+input_dir="/path/to/combined/fasta/files"
 
 # 3. クエリファイルの指定 - 必須修正箇所
-query_file="/path/to/clb_genes.fna"  # ← clb_genes.fnaファイルのフルパス
+query_file="/path/to/clb_genes.fna"
 
 # 4. BLAST DBと出力ファイルの保存先 - 必須修正箇所
-blast_db_folder="/path/to/blast/output"  # ← BLAST結果の保存先
+blast_db_folder="/path/to/blast/output"
+
+# 5. BLAST検索パラメータ設定 - 研究目的に応じて調整
+# 塩基配列一致度閾値（%）
+PERC_IDENTITY=97  # ← 60, 70, 80, 90, 97など研究に応じて設定
+
+# E-value閾値
+EVALUE=1e-5  # ← 論文準拠の設定
+
+# 最大ターゲット配列数
+MAX_TARGET_SEQS=10000000
+
+# 使用スレッド数
+NUM_THREADS=2
 # ===== ユーザー設定エリア終了 =====
 ```
 
-**設定例：**
-```bash
-# macOSの場合
-blast_dir="/usr/local/bin"  # またはBLASTのインストール場所
-input_dir="/Users/username/clb_analysis/results/combined_fasta"
-query_file="/Users/username/clb_analysis/references/clb_genes.fna"
-blast_db_folder="/Users/username/clb_analysis/results/blast_results"
-
-# Windowsの場合（WSL使用時）
-blast_dir="/mnt/c/blast/bin"
-input_dir="/mnt/c/Users/username/clb_analysis/results/combined_fasta"
-query_file="/mnt/c/Users/username/clb_analysis/references/clb_genes.fna"
-blast_db_folder="/mnt/c/Users/username/clb_analysis/results/blast_results"
-```
+> **🔬 研究者向け重要事項**
+> 
+> **塩基配列一致度の選択指針:**
+> - **60-70%**: より多様な配列バリアントを検出（感度重視）
+> - **80-90%**: バランスの取れた検出（推奨設定）
+> - **95-97%**: 高い特異度での検出（特異度重視）
+> 
+> **論文では60%, 70%, 80%, 90%で性能評価を実施**しており、研究目的に応じてこれらの値から選択することを推奨します。
 
 #### Countlead(for loop).py の設定
 
 ```python
 # ===== ユーザー設定エリア =====
 # 入力ディレクトリのパス - 必須修正箇所
-input_dir = "/path/to/blast/results"  # ← BLAST結果ディレクトリ
+input_dir = "/path/to/blast/results"
 
 # 出力先Excelファイルのパス - 必須修正箇所
-output_excel = "/path/to/output/clb_counts.xlsx"  # ← 結果Excel保存先
+output_excel = "/path/to/output/clb_counts.xlsx"
+
+# パラメータ別の結果も出力するか（True/False）
+SEPARATE_BY_PARAMETERS = True  # ← 塩基配列一致度別の結果比較用
 # ===== ユーザー設定エリア終了 =====
 ```
-
-**設定例：**
-```python
-# macOSの場合
-input_dir = "/Users/username/clb_analysis/results/blast_results"
-output_excel = "/Users/username/clb_analysis/results/clb_counts_final.xlsx"
-
-# Windowsの場合
-input_dir = "C:/Users/username/clb_analysis/results/blast_results"
-output_excel = "C:/Users/username/clb_analysis/results/clb_counts_final.xlsx"
-```
-
-### 3.2 設定の確認方法
-
-各スクリプトを実行すると、設定されたパスが正しいかどうかを自動チェックします：
-
-```bash
-# 例：fastq_to_fasta.py実行時
-python scripts/fastq_to_fasta.py
-
-# 出力例：
-# FASTQ to FASTA 変換スクリプト
-# 入力ディレクトリ: /Users/username/clb_analysis/data
-# 出力ディレクトリ: /Users/username/clb_analysis/results/fasta_converted
-# --------------------------------------------------
-# 処理を開始しますか？ (y/n):
-```
-
-エラーが表示された場合は、設定エリアのパスを再確認してください。
 
 ## ステップ4: FASTQ to FASTA変換
 
@@ -318,91 +273,31 @@ IIIIIIIIIIIIIIIII
 ATGCGATCGATCGATCG
 ```
 
-> **💡 説明**
-> - FASTQには品質情報（3行目と4行目）が含まれるが、BLAST検索には不要
-> - FASTAはよりシンプルで、BLAST検索に適した形式
+### 4.2 スクリプトの実行
 
-### 4.2 スクリプトの設定と実行
-
-提供された`fastq_to_fasta.py`スクリプトを使用します：
-
-```bash
-# まず、スクリプト内のパス設定を修正
-nano scripts/fastq_to_fasta.py
-# または
-code scripts/fastq_to_fasta.py  # Visual Studio Code使用時
-```
-
-**修正箇所：**
-- `input_dir`: あなたのFASTQファイルがあるディレクトリ
-- `output_base_dir`: 変換されたFASTAファイルの出力先
-
-**修正後、スクリプトを実行：**
 ```bash
 python scripts/fastq_to_fasta.py
 ```
 
-**スクリプトが実行する処理：**
-1. 指定ディレクトリ内のFASTQファイルを自動検出
-2. 圧縮ファイル（.bz2, .gz）の自動解凍対応
-3. DRR番号ごとにディレクトリを自動作成
-4. FASTQからFASTAへの一括変換
-
-### 4.3 結果の確認
-
-```bash
-# 変換されたファイルがあるか確認
-ls results/fasta_converted/
-```
-
 ## ステップ5: FASTA配列の処理
 
-### 5.1 スクリプトの設定
-
-`fastaseq.py`スクリプト内の設定を修正します：
-
-```bash
-nano scripts/fastaseq.py
-```
-
-**修正箇所：**
-- `folder`: FASTA変換されたファイルがあるディレクトリ
-- `drr`: 処理したいDRR番号
-- `output_folder`: 結合されたファイルの出力先
-
-### 5.2 ペアードリードの結合
+### 5.1 ペアードリードの結合
 
 ```bash
 python scripts/fastaseq.py
 ```
 
-**スクリプトが実行する処理：**
-1. フォワードリード（_1.fa）の各配列IDに「:1」を追加
-2. リバースリード（_2.fa）の各配列IDに「:2」を追加
-3. 2つのファイルを1つに結合
-
-### 5.3 実行後の確認
-
-```bash
-# 結合されたファイルの行数を確認
-wc -l results/combined_fasta/your_sample.fa
-```
-
 ## ステップ6: BLASTデータベースの構築と検索
 
-### 6.1 スクリプトの設定
+### 6.1 重要：研究用パラメータの設定
 
-`BlastDB(for loop).sh`スクリプトの設定を確認・修正してください：
+論文の研究結果に基づいて、以下のパラメータ設定を推奨します：
 
-```bash
-nano scripts/"BlastDB(for loop).sh"
-```
-
-**修正が必要な項目（ユーザー設定エリア内）：**
-- `blast_dir`: BLASTプログラムのインストール場所
-- `input_dir`: 結合されたFASTAファイルがあるディレクトリ
-- `query_file`: clb_genes.fnaファイルのフルパス
-- `blast_db_folder`: BLAST結果の保存先ディレクトリ
+| パラメータ | 推奨値 | 説明 | 研究での知見 |
+|-----------|--------|------|-------------|
+| 塩基配列一致度 | 60-90% | 研究目的に応じて調整 | 70-90%で良好な性能 |
+| E-value | 1e-5 | 統計的有意性 | 論文準拠の設定 |
+| 最大ターゲット数 | 10,000,000 | 大量ヒット許可 | 網羅的検索に必要 |
 
 ### 6.2 スクリプトの実行
 
@@ -414,95 +309,100 @@ chmod +x scripts/"BlastDB(for loop).sh"
 bash scripts/"BlastDB(for loop).sh"
 ```
 
-**スクリプトが実行する処理：**
-1. 各FASTAファイルに対してBLASTデータベースを作成
-2. clb遺伝子配列をクエリとしてBLAST検索を実行
-3. 結果をTSV形式とアライメント形式で保存
-4. 処理ログを自動記録
+### 6.3 複数パラメータでの比較実行（推奨）
 
-### 6.3 実行時間の目安
+研究の妥当性を高めるため、複数の塩基配列一致度で解析を実行することを推奨します：
 
-- 小さなデータセット（数千リード）: 数分
-- 中規模データセット（数万リード）: 数十分
-- 大規模データセット（数百万リード）: 数時間
+```bash
+# 60%で実行
+# スクリプト内のPERC_IDENTITY=60に変更して実行
+bash scripts/"BlastDB(for loop).sh"
 
-### 6.4 検索パラメータの説明
+# 70%で実行  
+# スクリプト内のPERC_IDENTITY=70に変更して実行
+bash scripts/"BlastDB(for loop).sh"
 
-| パラメータ | 設定値 | 説明 |
-|-----------|--------|------|
-| `-evalue` | 1e-5 | 統計的有意性の閾値 |
-| `-perc_identity` | 97 | 97%以上の配列類似度を要求 |
-| `-max_target_seqs` | 10000000 | 大量のヒットを許可 |
-| `-num_threads` | 2 | 並列処理数 |
+# 80%で実行
+# スクリプト内のPERC_IDENTITY=80に変更して実行  
+bash scripts/"BlastDB(for loop).sh"
+
+# 90%で実行
+# スクリプト内のPERC_IDENTITY=90に変更して実行
+bash scripts/"BlastDB(for loop).sh"
+```
 
 ## ステップ7: 結果の集計
 
-### 7.1 スクリプトの設定
-
-`Countlead(for loop).py`スクリプトの設定を修正します：
-
-```bash
-nano scripts/"Countlead(for loop).py"
-```
-
-**修正箇所：**
-- `input_dir`: BLAST結果ファイル（*_alignment.txt）があるディレクトリ
-- `output_excel`: 結果を保存するExcelファイルのパス
-
-### 7.2 集計スクリプトの実行
+### 7.1 集計スクリプトの実行
 
 ```bash
 python scripts/"Countlead(for loop).py"
 ```
 
-**スクリプトが実行する処理：**
-1. BLAST結果ファイル（*_alignment.txt）を自動検出
-2. 各clb遺伝子（clbA～clbS）のユニークなリード数をカウント
-3. DRR番号ごとに結果を整理
-4. Excelファイルとして結果を出力
-
-### 7.3 出力ファイルの形式
+### 7.2 出力ファイルの形式
 
 生成されるExcelファイルには以下の情報が含まれます：
 
+#### 基本情報
 | 列 | 内容 | 説明 |
 |----|------|------|
-| Sample | サンプルID | DRR番号（例：DRR171459） |
-| clbA | リード数 | clbA遺伝子のユニークリード数 |
-| clbB | リード数 | clbB遺伝子のユニークリード数 |
-| ... | ... | ... |
-| clbS | リード数 | clbS遺伝子のユニークリード数 |
+| Sample | サンプルID | DRR番号など |
+| Identity_Threshold | 塩基配列一致度 | 60%, 70%, 80%, 90%など |
+| E_value | E値閾値 | 統計的有意性の設定値 |
+| Total_reads | 総リード数 | 各サンプルの総リード数（FASTAファイルから取得） |
 
-### 7.4 結果の確認
+#### clb遺伝子別リード数
+| 列 | 内容 | 説明 |
+|----|------|------|
+| clbA～clbS | 各遺伝子のリード数 | 19種類のclb遺伝子それぞれ |
+| Total_clb_reads | 総clbリード数 | クラスター全体の存在量 |
+| Detected_genes_count | 検出遺伝子数 | 19遺伝子中の検出数 |
 
-```bash
-# 結果ファイルの確認
-ls -la results/clb_counts_final.xlsx
-```
+#### pks+大腸菌判定結果
+| 列 | 内容 | 説明 |
+|----|------|------|
+| pks_positive_clbB | clbB基準判定 | 単一遺伝子マーカー |
+| pks_positive_cluster | クラスター基準判定 | Nooijらの手法 |
+
+> **💡 総リード数の取得について**
+> 
+> 各サンプルの総リード数は、対応するFASTAファイル（例：`DRR123456.fa`）から自動取得されます。
+> FASTAファイルが見つからない場合は「N/A」と表示されます。
+> スクリプト設定で`fasta_dir`パラメータを正しく設定してください。
 
 ## ステップ8: 結果の解釈
 
-### 8.1 結果の意味
+### 8.1 判定基準の選択指針
 
-**高いリード数を示す遺伝子:**
-- そのサンプルに多く存在する可能性が高い
-- 機能的に重要な役割を果たしている可能性
+**論文の研究結果に基づく推奨事項:**
 
-**低いリード数を示す遺伝子:**
-- 存在量が少ない、または
-- 配列の類似度が低い（検出が困難）
+#### 単一遺伝子マーカー（clbB）
+- **AUC: 0.826** - 高い判別性能
+- **利点**: 計算効率が高い、実行が簡単
+- **適用場面**: 大規模データセットの迅速スクリーニング
 
-### 8.2 統計的解析のヒント
+#### クラスター全体（19遺伝子総和）
+- **AUC: 0.838** - 最高の判別性能  
+- **利点**: 遺伝子欠失に対する頑健性、生物学的妥当性
+- **適用場面**: 詳細な機能解析、研究論文での報告
 
-1. **正規化**: サンプル間のシーケンシング深度の違いを考慮
-2. **比較分析**: 健康群と疾患群での遺伝子存在量の比較
-3. **相関分析**: 異なるclb遺伝子間の関係性を調査
+### 8.2 塩基配列一致度の影響
 
-### 8.3 注意点
+**研究結果に基づく知見:**
+- **60-70%**: 高感度だが偽陽性のリスク
+- **80-90%**: バランスの取れた性能（推奨）
+- **95%以上**: 高特異度だが新規バリアント見逃しのリスク
 
-1. **偽陽性の可能性**: 類似した配列を持つ他の遺伝子との誤認
-2. **検出限界**: 存在量が極めて少ない場合は検出できない
-3. **配列品質**: 低品質なリードは正確な検索ができない
+### 8.3 統計解析への応用
+
+**正規化された定量値の活用:**
+```
+RPM (Reads Per Million) = (clb遺伝子リード数 / 総リード数) × 1,000,000
+```
+
+**ROC解析用閾値（論文より）:**
+- clbB単体: 0.0166 RPM
+- クラスター全体: 0.0124 RPM
 
 ## 📁 完了後のディレクトリ構造
 
@@ -520,88 +420,14 @@ clb_analysis/
 │   └── clb_genes.fna
 └── results/
     ├── fasta_converted/
-    │   └── DRR123456/
-    │       ├── DRR123456_1.fa
-    │       └── DRR123456_2.fa
     ├── combined_fasta/
-    │   └── DRR123456.fa
     ├── blast_results/
-    │   └── DRR123456/
-    │       ├── DRR123456.tsv
-    │       ├── DRR123456_alignment.txt
-    │       └── (database files)
-    └── clb_counts_final.xlsx
+    │   ├── sample_identity60_evalue1e-5/
+    │   ├── sample_identity70_evalue1e-5/
+    │   ├── sample_identity80_evalue1e-5/
+    │   └── sample_identity90_evalue1e-5/
+    └── clb_counts_comparison.xlsx
 ```
-
-## 🔧 カスタマイズのヒント
-
-### 大量サンプルの処理
-
-複数のサンプルを効率的に処理するために：
-
-1. **バッチ処理**: 提供されたスクリプトは既にループ処理に対応
-2. **並列処理**: BLASTの`-num_threads`パラメータを調整
-3. **メモリ管理**: 大きなファイルを分割して処理
-
-### パラメータの調整
-
-**より厳密な検索の場合:**
-```bash
--evalue 1e-10    # より厳しいE値
--perc_identity 99  # より高い類似度要求
-```
-
-**より広範囲な検索の場合:**
-```bash
--evalue 1e-3     # より緩いE値
--perc_identity 90  # より低い類似度許容
-```
-
-## 🚨 よくあるエラーと対処法
-
-### 1. 「command not found」エラー
-**症状**: `blastn: command not found`
-**対処法**: 
-- BLASTが正しくインストールされているか確認
-- PATHの設定を確認
-- `which blastn`でパスを確認
-
-### 2. 「No such file or directory」エラー
-**症状**: ファイルやディレクトリが見つからない
-**対処法**:
-- スクリプト内のパス設定を確認
-- ファイル名のスペルミスをチェック
-- 相対パスではなく絶対パスを使用
-
-### 3. 「Permission denied」エラー
-**症状**: ファイルの実行権限がない
-**対処法**:
-```bash
-chmod +x scripts/"BlastDB(for loop).sh"
-```
-
-### 4. Pythonライブラリのエラー
-**症状**: `ModuleNotFoundError: No module named 'pandas'`
-**対処法**:
-```bash
-pip install pandas openpyxl
-```
-
-### 5. メモリ不足エラー
-**症状**: BLASTが途中で停止
-**対処法**:
-- データサイズを小さくする
-- より高性能なコンピュータを使用
-- `-num_threads`を減らす
-
-## 📞 サポート
-
-問題が解決しない場合は、以下の情報と共にIssueを作成してください：
-
-1. **OS**: Windows/Mac/Linux
-2. **エラーメッセージ**: 正確なエラーメッセージをコピー
-3. **実行したコマンド**: 何を実行したときにエラーが発生したか
-4. **ファイル構造**: `ls -la`の出力結果
 
 ## 📄 ライセンス
 
