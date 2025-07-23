@@ -1,11 +1,13 @@
 #!/bin/bash
 # -----------------------------------------------------------
-# BLAST データベース構築・検索スクリプト
-# 複数のFASTAファイルを処理するバッチスクリプト
+# BLAST データベース構築・検索スクリプト（コリバクチン研究用）
+# 複数のFASTAファイルを処理してclb遺伝子を検索するバッチスクリプト
 # 
 # 使用方法：
 # 1. 下記の「ユーザー設定エリア」のパスを修正
 # 2. bash BlastDB\(for\ loop\).sh で実行
+# 
+# 参考論文：[論文情報を記載予定]
 # -----------------------------------------------------------
 
 # ===== ユーザー設定エリア =====
@@ -22,7 +24,21 @@ query_file="/path/to/clb_genes.fna"  # ← clb_genes.fnaファイルのフルパ
 # 4. BLAST DBと出力ファイルの保存先 - 必須修正箇所
 blast_db_folder="/path/to/blast/output"  # ← BLAST結果の保存先ディレクトリを指定してください
 
-# 5. BLASTDB環境変数（オプション）
+# 5. BLAST検索パラメータ設定
+# 塩基配列一致度閾値（%）- 研究目的に応じて調整してください
+# 論文では60%, 70%, 80%, 90%で検証されています
+PERC_IDENTITY=97  # ← 塩基配列一致度を指定（60-100の範囲で設定）
+
+# E-value閾値 - 統計的有意性の閾値
+EVALUE=1e-5  # ← 論文準拠の設定（より厳密にする場合は1e-10等に変更可能）
+
+# 最大ターゲット配列数
+MAX_TARGET_SEQS=10000000
+
+# 使用スレッド数（お使いのコンピュータの性能に合わせて調整）
+NUM_THREADS=2
+
+# 6. BLASTDB環境変数（オプション）
 export BLASTDB="$blast_db_folder"
 
 # ===== ユーザー設定エリア終了 =====
@@ -45,11 +61,13 @@ touch "$log_file"
 # エラーログファイル
 error_log="$blast_db_folder/error.log"
 
-echo "BLAST データベース構築・検索スクリプト"
+echo "BLAST データベース構築・検索スクリプト（コリバクチン研究用）"
 echo "入力ディレクトリ: $input_dir"
 echo "クエリファイル: $query_file"
 echo "出力ディレクトリ: $blast_db_folder"
 echo "BLAST実行ファイル: $blast_dir"
+echo "塩基配列一致度閾値: ${PERC_IDENTITY}%"
+echo "E-value閾値: $EVALUE"
 echo "====================================="
 
 # 設定確認
@@ -77,6 +95,12 @@ if [ ! -f "$blastn_cmd" ]; then
     exit 1
 fi
 
+# パラメータ検証
+if [ "$PERC_IDENTITY" -lt 60 ] || [ "$PERC_IDENTITY" -gt 100 ]; then
+    echo "警告: 塩基配列一致度閾値($PERC_IDENTITY%)が推奨範囲外です。"
+    echo "論文では60-90%の範囲で検証されています。"
+fi
+
 # ファイルサイズを確認する関数
 check_file_size() {
     [ -s "$1" ]
@@ -89,6 +113,7 @@ count_file_lines() {
 
 # 処理開始
 echo "Starting batch processing of FASTA files at $(date)" | tee -a "$log_file"
+echo "Parameters: identity=${PERC_IDENTITY}%, evalue=${EVALUE}" | tee -a "$log_file"
 echo "-------------------------------------------" | tee -a "$log_file"
 
 # FASTAファイルを検索（.faで終わるファイル）
@@ -103,21 +128,23 @@ for input_file in "$input_dir"/*.fa; do
     file_base=$(basename "$input_file")
     sample_name="${file_base%.fa}"
     
-    # すでに処理済みかチェック
-    if grep -q "^$sample_name completed" "$log_file"; then
-        echo "Skipping $sample_name - already processed" | tee -a "$log_file"
+    # すでに処理済みかチェック（パラメータ含む）
+    search_pattern="${sample_name}_identity${PERC_IDENTITY}_evalue${EVALUE} completed"
+    if grep -q "$search_pattern" "$log_file"; then
+        echo "Skipping $sample_name - already processed with current parameters" | tee -a "$log_file"
         continue
     fi
     
     echo "Processing file: $file_base ($(date))" | tee -a "$log_file"
+    echo "Parameters: identity=${PERC_IDENTITY}%, evalue=${EVALUE}" | tee -a "$log_file"
     
-    # サンプル用の専用フォルダを作成
-    sample_folder="$blast_db_folder/$sample_name"
+    # サンプル用の専用フォルダを作成（パラメータ含む）
+    sample_folder="$blast_db_folder/${sample_name}_identity${PERC_IDENTITY}_evalue${EVALUE}"
     [ ! -d "$sample_folder" ] && mkdir -p "$sample_folder"
     
     # 出力ファイル名の設定
-    output_tsv="$sample_folder/${sample_name}.tsv"
-    output_alignment="$sample_folder/${sample_name}_alignment.txt"
+    output_tsv="$sample_folder/${sample_name}_identity${PERC_IDENTITY}_evalue${EVALUE}.tsv"
+    output_alignment="$sample_folder/${sample_name}_identity${PERC_IDENTITY}_evalue${EVALUE}_alignment.txt"
     
     # データベースファイルの設定
     db_name="$sample_name"
@@ -157,7 +184,7 @@ for input_file in "$input_dir"/*.fa; do
     fi
     
     # BLAST 検索（アライメント情報付き）
-    echo "Running interactive BLAST search for $sample_name..." | tee -a "$log_file"
+    echo "Running interactive BLAST search for $sample_name with identity=${PERC_IDENTITY}%..." | tee -a "$log_file"
     
     # カレントディレクトリを一時的にサンプルフォルダに変更
     current_dir=$(pwd)
@@ -165,23 +192,23 @@ for input_file in "$input_dir"/*.fa; do
     
     "$blastn_cmd" -query "$query_file" \
                  -db "$db_name" \
-                 -out "${sample_name}_alignment.txt" \
+                 -out "${sample_name}_identity${PERC_IDENTITY}_evalue${EVALUE}_alignment.txt" \
                  -outfmt 7 \
-                 -evalue 1e-5 \
-                 -max_target_seqs 10000000 \
-                 -perc_identity 97 \
-                 -num_threads 2
+                 -evalue "$EVALUE" \
+                 -max_target_seqs "$MAX_TARGET_SEQS" \
+                 -perc_identity "$PERC_IDENTITY" \
+                 -num_threads "$NUM_THREADS"
     
     # BLAST 検索（タブ区切りTSV出力）
-    echo "Running structured BLAST search for $sample_name..." | tee -a "$log_file"
+    echo "Running structured BLAST search for $sample_name with identity=${PERC_IDENTITY}%..." | tee -a "$log_file"
     "$blastn_cmd" -query "$query_file" \
                  -db "$db_name" \
-                 -out "${sample_name}.tsv" \
+                 -out "${sample_name}_identity${PERC_IDENTITY}_evalue${EVALUE}.tsv" \
                  -outfmt 6 \
-                 -evalue 1e-5 \
-                 -max_target_seqs 10000000 \
-                 -perc_identity 97 \
-                 -num_threads 2
+                 -evalue "$EVALUE" \
+                 -max_target_seqs "$MAX_TARGET_SEQS" \
+                 -perc_identity "$PERC_IDENTITY" \
+                 -num_threads "$NUM_THREADS"
     
     # 元のディレクトリに戻る
     cd "$current_dir"
@@ -190,9 +217,9 @@ for input_file in "$input_dir"/*.fa; do
     if check_file_size "$output_tsv"; then
         hits=$(count_file_lines "$output_tsv")
         echo "Results saved in $output_tsv" | tee -a "$log_file"
-        echo "Number of hits found: $hits" | tee -a "$log_file"
+        echo "Number of hits found: $hits (identity≥${PERC_IDENTITY}%)" | tee -a "$log_file"
     else
-        echo "No BLAST hits found for $sample_name." | tee -a "$log_file"
+        echo "No BLAST hits found for $sample_name with identity≥${PERC_IDENTITY}%." | tee -a "$log_file"
     fi
     
     if check_file_size "$output_alignment"; then
@@ -201,10 +228,10 @@ for input_file in "$input_dir"/*.fa; do
         echo "No alignment output generated for $sample_name." | tee -a "$log_file"
     fi
     
-    # 処理完了を記録
-    echo "$sample_name completed at $(date)" | tee -a "$log_file"
+    # 処理完了を記録（パラメータ含む）
+    echo "${sample_name}_identity${PERC_IDENTITY}_evalue${EVALUE} completed at $(date)" | tee -a "$log_file"
     echo "-------------------------------------------" | tee -a "$log_file"
 done
 
-echo "All files have been processed." | tee -a "$log_file"
+echo "All files have been processed with parameters: identity=${PERC_IDENTITY}%, evalue=${EVALUE}" | tee -a "$log_file"
 echo "Batch processing completed at $(date)" | tee -a "$log_file"
