@@ -2,16 +2,16 @@ import os
 
 def process_and_write_fasta(input_path, suffix, output_handle):
     """
-    指定されたFASTAファイルを1行ずつ読み込み、
-    ヘッダー行（">"で始まる行）では、先頭のシーケンスID部分の末尾に ":{suffix}" を付加して出力する。
-    それ以外の行はそのまま出力する。
+    Read the specified FASTA file line by line.
+    For header lines (lines starting with ">"), append ":{suffix}" to the end of the initial sequence ID portion and output.
+    Output all other lines as is.
     """
     with open(input_path, 'r') as infile:
         for line in infile:
             if line.startswith('>'):
-                # ヘッダー行の場合、最初のトークンのみを取り出し、末尾に:suffixを追加する
-                parts = line.strip().split(None, 1)  # ヘッダーの最初のトークンと残りを分割
-                header = parts[0]  # ">"付きのID
+                # For header lines, extract only the first token and append :suffix to the end
+                parts = line.strip().split(None, 1)  # Split the first token of the header from the rest
+                header = parts[0]  # ID with ">"
                 rest = parts[1] if len(parts) > 1 else ""
                 new_header = f"{header}:{suffix}"
                 if rest:
@@ -22,56 +22,56 @@ def process_and_write_fasta(input_path, suffix, output_handle):
 
 def combine_fasta_files(fasta1_path, fasta2_path, output_path):
     """
-    _1用と_2用のFASTAファイルをそれぞれ行単位で処理し、
-    forward readには":1"、reverse readには":2"を追加した上で連結し、output_pathに書き出す。
+    Process FASTA files for _1 and _2 line by line,
+    add ":1" for forward reads and ":2" for reverse reads, concatenate them, and write to output_path.
     """
     with open(output_path, 'w') as out_f:
         process_and_write_fasta(fasta1_path, 1, out_f)
         process_and_write_fasta(fasta2_path, 2, out_f)
-    print(f"連結完了: {output_path}")
+    print(f"Concatenation completed: {output_path}")
 
-# ===== ユーザー設定エリア =====
+# ===== User Configuration Area =====
 
-# 対象のDRRファイルが存在するフォルダー - 必須修正箇所
-folder = "/path/to/your/fasta/folder"  # ← ここを修正してください
+# Folder containing target DRR files - Required modification
+folder = "/path/to/your/fasta/folder"  # ← Please modify here
 
-# DRR番号 - 必須修正箇所
-drr = "DRR123456"  # ← ここを修正してください（例: DRR171459）
+# DRR accession number - Required modification
+drr = "DRR123456"  # ← Please modify here (e.g., DRR171459)
 
-# 結合したファイルの保存先フォルダー - 必須修正箇所
-output_folder = "/path/to/output/folder"  # ← ここを修正してください
+# Output folder for concatenated file - Required modification
+output_folder = "/path/to/output/folder"  # ← Please modify here
 
-# ===== ユーザー設定エリア終了 =====
+# ===== End of User Configuration Area =====
 
-# ファイルパスの設定（通常は修正不要）
+# File path configuration (usually no modification needed)
 fasta1_path = os.path.join(folder, f"{drr}_1.fa")
 fasta2_path = os.path.join(folder, f"{drr}_2.fa")
 
-# 出力フォルダが存在しなければ作成
+# Create output folder if it does not exist
 os.makedirs(output_folder, exist_ok=True)
 output_path = os.path.join(output_folder, f"{drr}.fa")
 
-print(f"FASTA配列結合スクリプト")
-print(f"対象DRR番号: {drr}")
-print(f"入力フォルダー: {folder}")
-print(f"出力フォルダー: {output_folder}")
+print(f"FASTA Sequence Concatenation Script")
+print(f"Target DRR accession: {drr}")
+print(f"Input folder: {folder}")
+print(f"Output folder: {output_folder}")
 print("-" * 50)
 
-# ファイル存在確認
+# File existence check
 if not os.path.exists(fasta1_path):
-    print(f"エラー: ファイルが見つかりません: {fasta1_path}")
-    print("folder と drr の設定を確認してください。")
+    print(f"Error: File not found: {fasta1_path}")
+    print("Please check the folder and drr settings.")
     exit(1)
 
 if not os.path.exists(fasta2_path):
-    print(f"エラー: ファイルが見つかりません: {fasta2_path}")
-    print("folder と drr の設定を確認してください。")
+    print(f"Error: File not found: {fasta2_path}")
+    print("Please check the folder and drr settings.")
     exit(1)
 
-# 結合処理の実行
-print(f"処理中: {drr}")
-print(f"  入力1: {fasta1_path}")
-print(f"  入力2: {fasta2_path}")
-print(f"  出力: {output_path}")
+# Execute concatenation process
+print(f"Processing: {drr}")
+print(f"  Input 1: {fasta1_path}")
+print(f"  Input 2: {fasta2_path}")
+print(f"  Output: {output_path}")
 
 combine_fasta_files(fasta1_path, fasta2_path, output_path)

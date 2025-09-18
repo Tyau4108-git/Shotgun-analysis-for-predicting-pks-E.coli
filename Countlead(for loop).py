@@ -5,78 +5,121 @@ import glob
 
 def count_unique_subjects_by_query(file_path):
     """
-    ファイル内の各行（ヘッダー行は '#' で始まるのでスキップ）について、
-    ・1列目（query acc.ver）から "clbX"（例："clbA"）を抽出し、
-    ・2列目（subject acc.ver）から "DRR" + 6桁 + "." と ":数字" を除いた中間の数字部分を抽出する。
-    また、subjectから最初に見つかった "DRR"＋6桁（例："DRR171459"）を取得します。
-    各グループごとにユニークな数字の個数とDRR番号を返します。
+    For each line in the file (skip header lines starting with '#'):
+    - Extract "clbX" (e.g., "clbA") from the 1st column (query acc.ver)
+    - Extract the numeric middle portion from the 2nd column (subject acc.ver) 
+      with flexible pattern matching for various ID formats
+    Supports multiple sequencing data prefixes: DRR, SRR, ERR, or custom IDs
+    Returns the count of unique numbers and sample ID for each group.
     
-    注意: 各サンプルの総リード数は、この関数では取得できません。
-    メタゲノムデータの総リード数が必要な場合は、別途FASTAファイルから取得してください。
+    Note: Total read counts for each sample cannot be obtained from this function.
+    If total metagenomic read counts are needed, please retrieve them separately from FASTA files.
     """
     group_to_numbers = {}
-    drr_id = None
-    blast_hit_count = 0  # BLASTヒット数（参考値）
+    sample_id = None
+    blast_hit_count = 0  # BLAST hit count (reference value)
     
     with open(file_path, 'r') as f:
         for line in f:
-            # ヘッダー行はスキップ
+            # Skip header lines
             if line.startswith("#"):
                 continue
             parts = line.strip().split("\t")
             if len(parts) < 2:
                 continue
-            query = parts[0]  # 例: "clbA.eco"
-            group = query.split(".")[0]  # "clbA" など
-            subject = parts[1]  # 例: "DRR171459.16276716:2"
+            query = parts[0]  # e.g., "clbA.eco"
+            group = query.split(".")[0]  # "clbA" etc.
+            subject = parts[1]  # e.g., "DRR171459.16276716:2" or "SRR123456_789012-3" etc.
             
-            # BLASTヒット数をカウント（参考値）
+            # Count BLAST hits (reference value)
             blast_hit_count += 1
             
-            # 初回のみ、subjectからDRR+6桁を取得（例："DRR171459"）
-            if drr_id is None:
-                m_drr = re.search(r"(DRR\d{6})", subject)
-                if m_drr:
-                    drr_id = m_drr.group(1)
-                else:
-                    drr_id = "Unknown"
-            # subject acc.ver の形式 "DRR\d{6}\.(\d+):\d+" から中間の数字部分を抽出
-            m = re.search(r"DRR\d{6}\.(\d+):\d+", subject)
-            if m:
-                num = m.group(1)
+            # Flexible pattern matching for various sample ID formats
+            if sample_id is None:
+                # Try multiple common patterns
+                patterns = [
+                    r"(DRR\d+)",           # DRR followed by any number of digits
+                    r"(SRR\d+)",           # SRR followed by any number of digits
+                    r"(ERR\d+)",           # ERR followed by any number of digits
+                    r"([A-Z]{2,4}\d{4,})", # 2-4 uppercase letters followed by 4+ digits
+                    r"^(\w+?)[\._\-:]",   # Any word characters before common separators
+                    r"^([^\._\-:]+)"      # Everything before first separator
+                ]
+                
+                for pattern in patterns:
+                    m_id = re.search(pattern, subject)
+                    if m_id:
+                        sample_id = m_id.group(1)
+                        break
+                
+                if sample_id is None:
+                    sample_id = "Unknown"
+            
+            # Flexible extraction of numeric portion after sample ID
+            # Try multiple separator patterns
+            separators = [r"\.", r"_", r"-", r":"]
+            numeric_patterns = [
+                rf"{re.escape(sample_id)}[\.\_\-:](\d+)",  # ID followed by separator and numbers
+                rf"[\.\_\-:](\d+)[\.\_\-:]",               # Numbers between separators
+                r"[\.\_\-:](\d+)$",                        # Numbers after separator at end
+                r"^[^\.\_\-:]*[\.\_\-:](\d+)"              # First numbers after any separator
+            ]
+            
+            extracted_num = None
+            for pattern in numeric_patterns:
+                m = re.search(pattern, subject)
+                if m:
+                    extracted_num = m.group(1)
+                    break
+            
+            # If no pattern matched, try to extract any sequence of digits
+            if not extracted_num:
+                # Find all sequences of digits and take the first substantial one (>3 digits)
+                all_numbers = re.findall(r'\d+', subject)
+                for num in all_numbers:
+                    if len(num) > 3 and not num.startswith(sample_id[-3:] if len(sample_id) > 3 else sample_id):
+                        extracted_num = num
+                        break
+            
+            if extracted_num:
                 if group not in group_to_numbers:
                     group_to_numbers[group] = set()
-                group_to_numbers[group].add(num)
+                group_to_numbers[group].add(extracted_num)
     
-    # 各グループごとのユニークな数字の個数を算出
+    # Calculate the count of unique numbers for each group
     group_counts = {group: len(nums) for group, nums in group_to_numbers.items()}
     
-    # ファイル名からもDRR IDを取得（バックアップとして）
-    if drr_id is None:
+    # Also try to extract sample ID from filename if not found
+    if sample_id is None or sample_id == "Unknown":
         file_name = os.path.basename(file_path)
-        # パラメータを含むファイル名パターンに対応
-        m_file = re.search(r"(DRR\d{6}|\w+)_identity\d+_evalue[\de-]+_alignment\.txt", file_name)
-        if m_file:
-            drr_id = m_file.group(1)
-        else:
-            # 従来のパターンもサポート
-            m_file = re.search(r"(DRR\d{6})_alignment\.txt", file_name)
+        
+        # Try various filename patterns
+        filename_patterns = [
+            r"([A-Z]{2,4}\d{4,}).*_alignment\.txt",  # Standard prefix with numbers
+            r"(.+?)_identity\d+.*_alignment\.txt",    # Sample name before parameters
+            r"(.+?)_alignment\.txt",                  # Simple pattern
+            r"^([^_]+)"                              # Everything before first underscore
+        ]
+        
+        for pattern in filename_patterns:
+            m_file = re.search(pattern, file_name)
             if m_file:
-                drr_id = m_file.group(1)
-            else:
-                drr_id = "Unknown"
+                potential_id = m_file.group(1)
+                if potential_id and potential_id != "Unknown":
+                    sample_id = potential_id
+                    break
     
-    return drr_id, group_counts, blast_hit_count
+    return sample_id, group_counts, blast_hit_count
 
 def get_total_reads_from_fasta(fasta_file_path):
     """
-    FASTAファイルから総リード数を取得する
+    Retrieve total read count from FASTA file
     
     Args:
-        fasta_file_path (str): FASTAファイルのパス
+        fasta_file_path (str): Path to FASTA file
         
     Returns:
-        int: 総リード数（ファイルが見つからない場合は-1）
+        int: Total read count (returns -1 if file not found)
     """
     if not os.path.exists(fasta_file_path):
         return -1
@@ -91,221 +134,340 @@ def get_total_reads_from_fasta(fasta_file_path):
     except:
         return -1
 
+def find_matching_fasta(fasta_dir, sample_id):
+    """
+    Find matching FASTA file with flexible naming patterns
+    
+    Args:
+        fasta_dir (str): Directory containing FASTA files
+        sample_id (str): Sample identifier
+        
+    Returns:
+        str: Path to matching FASTA file or None if not found
+    """
+    if not os.path.exists(fasta_dir):
+        return None
+    
+    # Try multiple file extensions and naming patterns
+    extensions = ['.fa', '.fasta', '.fna', '.fa.gz', '.fasta.gz']
+    
+    for ext in extensions:
+        # Try exact match
+        exact_path = os.path.join(fasta_dir, f"{sample_id}{ext}")
+        if os.path.exists(exact_path):
+            return exact_path
+        
+        # Try with wildcards
+        pattern_paths = glob.glob(os.path.join(fasta_dir, f"{sample_id}*{ext}"))
+        if pattern_paths:
+            return pattern_paths[0]
+        
+        # Try case-insensitive match
+        all_files = glob.glob(os.path.join(fasta_dir, f"*{ext}"))
+        for file_path in all_files:
+            if sample_id.lower() in os.path.basename(file_path).lower():
+                return file_path
+    
+    return None
+
 def extract_parameters_from_filename(file_path):
     """
-    ファイル名からBLASTパラメータを抽出する
+    Extract BLAST parameters from filename with flexible pattern matching
     """
     file_name = os.path.basename(file_path)
     
-    # パラメータを含むファイル名パターン
-    m = re.search(r"identity(\d+)_evalue([\de-]+)", file_name)
-    if m:
-        identity = m.group(1)
-        evalue = m.group(2)
-        return identity, evalue
-    else:
-        # パラメータが含まれていない場合はデフォルト値を返す
-        return "unknown", "unknown"
+    # Try multiple parameter patterns
+    patterns = [
+        r"identity(\d+).*evalue([\de\-\+\.]+)",     # Standard pattern
+        r"id(\d+).*e([\de\-\+\.]+)",                # Shortened version
+        r"(\d+).*evalue([\de\-\+\.]+)",             # Just numbers and evalue
+        r"identity(\d+)",                            # Identity only
+        r"evalue([\de\-\+\.]+)"                      # E-value only
+    ]
+    
+    identity = "unknown"
+    evalue = "unknown"
+    
+    for pattern in patterns:
+        m = re.search(pattern, file_name, re.IGNORECASE)
+        if m:
+            if len(m.groups()) == 2:
+                identity = m.group(1)
+                evalue = m.group(2)
+            elif "identity" in pattern.lower() or pattern.startswith(r"(\d+)"):
+                identity = m.group(1)
+            elif "evalue" in pattern.lower():
+                evalue = m.group(1)
+            
+            if identity != "unknown" and evalue != "unknown":
+                break
+    
+    return identity, evalue
 
-# ===== ユーザー設定エリア =====
+# ===== User Configuration Area =====
 
-# 入力ディレクトリのパス - 必須修正箇所
-input_dir = "/path/to/blast/results"  # ← BLAST結果ファイル（*_alignment.txt）があるディレクトリを指定してください
+# Input directory path - Required modification
+input_dir = "/path/to/blast/results"  # ← Specify directory containing BLAST result files (*_alignment.txt)
 
-# FASTAファイルディレクトリのパス - 総リード数取得用（オプション）
-fasta_dir = "/path/to/combined/fasta/files"  # ← 結合されたFASTAファイルがあるディレクトリ（総リード数取得用）
+# FASTA file directory path - For total read count retrieval (optional)
+fasta_dir = "/path/to/combined/fasta/files"  # ← Directory containing combined FASTA files (for total read count retrieval)
 
-# 出力先Excelファイルのパス - 必須修正箇所
-output_excel = "/path/to/output/clb_counts.xlsx"  # ← 結果を保存するExcelファイルのパスを指定してください
+# Output Excel file path - Required modification
+output_excel = "/path/to/output/clb_counts.xlsx"  # ← Specify path for saving result Excel file
 
-# パラメータ別の結果も出力するか（True/False）
-SEPARATE_BY_PARAMETERS = True  # ← 塩基配列一致度別に結果を分けて出力する場合はTrue
+# Whether to output results by parameters (True/False)
+SEPARATE_BY_PARAMETERS = True  # ← Set to True to output results separated by sequence identity
 
-# ===== ユーザー設定エリア終了 =====
+# Advanced pattern configuration (optional)
+# Add custom sample ID patterns if your data uses non-standard formats
+CUSTOM_ID_PATTERNS = [
+    # Add your custom patterns here, e.g.:
+    # r"(MYLAB\d{8})",  # Custom lab ID format
+    # r"(Sample_\d+)",   # Sample_123 format
+]
 
-print(f"clb遺伝子カウント集計スクリプト（コリバクチン研究用）")
-print(f"入力ディレクトリ: {input_dir}")
-print(f"FASTAディレクトリ: {fasta_dir}")
-print(f"出力ファイル: {output_excel}")
-print(f"パラメータ別出力: {SEPARATE_BY_PARAMETERS}")
+# ===== End of User Configuration Area =====
+
+print(f"clb Gene Count Analysis Script (Colibactin Research)")
+print(f"Version: Flexible Pattern Matching")
+print(f"Input directory: {input_dir}")
+print(f"FASTA directory: {fasta_dir}")
+print(f"Output file: {output_excel}")
+print(f"Parameter-specific output: {SEPARATE_BY_PARAMETERS}")
 print("-" * 50)
 
-# ディレクトリの存在確認
+# Check directory existence
 if not os.path.exists(input_dir):
-    print(f"エラー: 入力ディレクトリが見つかりません: {input_dir}")
-    print("スクリプト上部の input_dir を正しいパスに修正してください。")
+    print(f"Error: Input directory not found: {input_dir}")
+    print("Please modify input_dir at the top of the script to the correct path.")
     exit(1)
 
-# *_alignment.txt ファイルのパターンに一致するファイルのリストを取得
+# Get list of files matching *_alignment.txt pattern
 alignment_files = glob.glob(os.path.join(input_dir, "*_alignment.txt"))
 
-# サブディレクトリも検索
+# Also search subdirectories
 if not alignment_files:
     alignment_files = glob.glob(os.path.join(input_dir, "**/*_alignment.txt"), recursive=True)
 
+# Try alternative patterns if no files found
 if not alignment_files:
-    print(f"エラー: {input_dir} に *_alignment.txt ファイルが見つかりません。")
-    print("BLAST検索が正常に完了しているか確認してください。")
-    print("検索パターン: *_alignment.txt")
+    alternative_patterns = ["*.txt", "*alignment*", "*blast*", "*result*"]
+    for pattern in alternative_patterns:
+        alignment_files = glob.glob(os.path.join(input_dir, f"**/{pattern}"), recursive=True)
+        if alignment_files:
+            print(f"Found files using pattern: {pattern}")
+            break
+
+if not alignment_files:
+    print(f"Error: No alignment files found in {input_dir}.")
+    print("Please verify that BLAST search completed successfully.")
+    print("Searched patterns: *_alignment.txt, *.txt, *alignment*, *blast*, *result*")
     exit(1)
 
-print(f"処理対象ファイル数: {len(alignment_files)}")
+print(f"Number of files to process: {len(alignment_files)}")
 
-# 全ての結果を格納するリスト
+# List to store all results
 all_results = []
 
-# パラメータ別の結果を格納する辞書（SEPARATE_BY_PARAMETERS=Trueの場合）
+# Dictionary to store results by parameters (if SEPARATE_BY_PARAMETERS=True)
 parameter_results = {}
 
-# 各ファイルに対して処理を実行
+# Track unique sample ID patterns found
+found_patterns = set()
+
+# Process each file
 for file_path in alignment_files:
-    print(f"処理中: {os.path.basename(file_path)}")
+    print(f"Processing: {os.path.basename(file_path)}")
     
-    # ファイル名からサンプル名とパラメータを取得
+    # Extract sample name and parameters from filename
     file_name = os.path.basename(file_path)
     
-    # パラメータを含むファイル名の場合
-    m = re.search(r"(.+)_identity(\d+)_evalue([\de-]+)_alignment\.txt", file_name)
-    if m:
-        sample_name = m.group(1)
-        identity = m.group(2)
-        evalue = m.group(3)
+    # Extract parameters (flexible patterns)
+    identity, evalue = extract_parameters_from_filename(file_name)
+    
+    if identity != "unknown" and evalue != "unknown":
         parameter_key = f"identity{identity}_evalue{evalue}"
     else:
-        # 従来のファイル名パターン
-        sample_name = file_name.replace("_alignment.txt", "")
-        identity = "unknown"
-        evalue = "unknown"
         parameter_key = "default"
     
-    # 各クエリごとに一意なsubjectの数字部分のカウントとDRR番号、BLASTヒット数を取得
-    drr_id, counts, blast_hit_count = count_unique_subjects_by_query(file_path)
+    # Get count of unique subject numeric portions, sample ID, and BLAST hit count for each query
+    sample_id, counts, blast_hit_count = count_unique_subjects_by_query(file_path)
     
-    # サンプル名を優先して使用
-    if sample_name and sample_name != "Unknown":
-        drr_id = sample_name
+    # Track the pattern type found
+    if sample_id and sample_id != "Unknown":
+        if sample_id.startswith("DRR"):
+            found_patterns.add("DRR")
+        elif sample_id.startswith("SRR"):
+            found_patterns.add("SRR")
+        elif sample_id.startswith("ERR"):
+            found_patterns.add("ERR")
+        else:
+            found_patterns.add("Custom")
     
-    # 対応するFASTAファイルから総リード数を取得
-    fasta_file_path = os.path.join(fasta_dir, f"{drr_id}.fa")
-    total_reads = get_total_reads_from_fasta(fasta_file_path)
+    # Try to find matching FASTA file with flexible patterns
+    fasta_file_path = find_matching_fasta(fasta_dir, sample_id)
+    total_reads = -1
     
-    # clbA～clbS の各グループについて、存在しない場合は 0 を設定
+    if fasta_file_path:
+        total_reads = get_total_reads_from_fasta(fasta_file_path)
+        print(f"  → Found FASTA file: {os.path.basename(fasta_file_path)}")
+    else:
+        print(f"  → FASTA file not found for sample: {sample_id}")
+    
+    # Set 0 for missing groups from clbA to clbS
     all_groups = [f"clb{chr(i)}" for i in range(ord('A'), ord('S')+1)]
     
-    # 基本の結果辞書
+    # Basic result dictionary
     row_data = {
-        "Sample": drr_id,
-        "Identity_Threshold": f"{identity}%",
+        "Sample": sample_id,
+        "Identity_Threshold": f"{identity}%" if identity != "unknown" else "unknown",
         "E_value": evalue,
-        "Total_reads": total_reads if total_reads > 0 else "N/A"  # 総リード数を追加
+        "Total_reads": total_reads if total_reads > 0 else "N/A"  # Add total read count
     }
     
     for group in all_groups:
         row_data[group] = counts.get(group, 0)
     
-    # 総clb遺伝子数とクラスタースコアを追加
+    # Add total clb gene count and cluster score
     total_clb_count = sum(counts.values())
     detected_genes_count = sum(1 for count in counts.values() if count > 0)
     
     row_data["Total_clb_reads"] = total_clb_count
     row_data["Detected_genes_count"] = detected_genes_count
     
-    # pks+判定（論文の基準に基づく）
-    # 基準1: clbB単体での判定（0リード以上で陽性）
+    # pks+ determination (based on literature criteria)
+    # Criterion 1: clbB-only determination (positive if >0 reads)
     row_data["pks_positive_clbB"] = 1 if counts.get("clbB", 0) > 0 else 0
     
-    # 基準2: 全clb遺伝子のリード総和での判定（Nooijらの基準）
+    # Criterion 2: Total read sum of all clb genes (Nooij et al. criterion)
     row_data["pks_positive_cluster"] = 1 if total_clb_count > 0 else 0
     
-    # 結果をリストに追加
+    # Add results to list
     all_results.append(row_data)
     
-    # パラメータ別の結果も保存
+    # Also save parameter-specific results
     if SEPARATE_BY_PARAMETERS:
         if parameter_key not in parameter_results:
             parameter_results[parameter_key] = []
         parameter_results[parameter_key].append(row_data)
     
-    # 進捗表示
-    print(f"  → 検出されたclb遺伝子の総リード数: {total_clb_count}")
-    print(f"  → 検出された遺伝子数: {detected_genes_count}/19")
-    print(f"  → パラメータ: identity={identity}%, evalue={evalue}")
-    print(f"  → 総リード数: {total_reads if total_reads > 0 else 'FASTAファイル未検出'}")
+    # Progress display
+    print(f"  → Sample ID: {sample_id}")
+    print(f"  → Total reads of detected clb genes: {total_clb_count}")
+    print(f"  → Number of detected genes: {detected_genes_count}/19")
+    print(f"  → Parameters: identity={identity}%, evalue={evalue}")
+    print(f"  → Total reads: {total_reads if total_reads > 0 else 'FASTA file not detected'}")
 
-# 出力ディレクトリが存在しない場合は作成
+# Display detected patterns
+if found_patterns:
+    print(f"\nDetected sample ID patterns: {', '.join(sorted(found_patterns))}")
+
+# Create output directory if it doesn't exist
 output_dir = os.path.dirname(output_excel)
 if output_dir and not os.path.exists(output_dir):
     os.makedirs(output_dir, exist_ok=True)
 
-# 全ての結果をDataFrameに変換
+# Convert all results to DataFrame
 df_all = pd.DataFrame(all_results)
 
-# Sampleでソート
-df_all = df_all.sort_values(['Identity_Threshold', 'E_value', 'Sample'])
+# Sort by Sample (with handling for unknown values)
+sort_columns = []
+if 'Identity_Threshold' in df_all.columns:
+    sort_columns.append('Identity_Threshold')
+if 'E_value' in df_all.columns:
+    sort_columns.append('E_value')
+sort_columns.append('Sample')
 
-# ExcelWriterを使用して複数シートで保存
+df_all = df_all.sort_values(sort_columns)
+
+# Save with multiple sheets using ExcelWriter
 with pd.ExcelWriter(output_excel, engine='openpyxl') as writer:
-    # 全結果シート
+    # All results sheet
     df_all.to_excel(writer, sheet_name='All_Results', index=False)
     
-    # パラメータ別シート（設定されている場合）
+    # Parameter-specific sheets (if configured)
     if SEPARATE_BY_PARAMETERS and parameter_results:
         for param_key, param_data in parameter_results.items():
             df_param = pd.DataFrame(param_data)
             df_param = df_param.sort_values('Sample')
-            # シート名の長さ制限に対応
-            sheet_name = param_key[:31]  # Excelのシート名は31文字まで
+            # Handle sheet name length limitation
+            sheet_name = param_key[:31]  # Excel sheet names limited to 31 characters
             df_param.to_excel(writer, sheet_name=sheet_name, index=False)
 
-print(f"\n処理完了:")
-print(f"  処理したファイル数: {len(alignment_files)}")
-print(f"  結果をExcelファイル '{output_excel}' に保存しました。")
-print(f"  出力された行数: {len(all_results)}")
+print(f"\nProcessing complete:")
+print(f"  Number of processed files: {len(alignment_files)}")
+print(f"  Results saved to Excel file '{output_excel}'.")
+print(f"  Number of output rows: {len(all_results)}")
 
-# 簡単な統計情報を表示
+# Display basic statistics
 if all_results:
-    print(f"\n統計情報:")
+    print(f"\nStatistics:")
     
-    # パラメータ別の統計
-    parameter_groups = df_all.groupby(['Identity_Threshold', 'E_value'])
+    # Group by parameters if they exist
+    group_columns = []
+    if df_all['Identity_Threshold'].nunique() > 1 or df_all['E_value'].nunique() > 1:
+        group_columns = ['Identity_Threshold', 'E_value']
     
-    for (identity, evalue), group in parameter_groups:
-        print(f"\n  パラメータ: identity={identity}, evalue={evalue}")
-        total_samples = len(group)
+    if group_columns:
+        parameter_groups = df_all.groupby(group_columns)
         
-        # 各判定基準での陽性率
-        clbB_positive = group['pks_positive_clbB'].sum()
-        cluster_positive = group['pks_positive_cluster'].sum()
+        for params, group in parameter_groups:
+            if len(group_columns) == 2:
+                identity, evalue = params
+                print(f"\n  Parameters: identity={identity}, evalue={evalue}")
+            else:
+                print(f"\n  Parameters: {params}")
+            
+            total_samples = len(group)
+            
+            # Positive rate for each criterion
+            clbB_positive = group['pks_positive_clbB'].sum()
+            cluster_positive = group['pks_positive_cluster'].sum()
+            
+            print(f"    Positive by clbB criterion: {clbB_positive}/{total_samples} samples ({clbB_positive/total_samples*100:.1f}%)")
+            print(f"    Positive by cluster criterion: {cluster_positive}/{total_samples} samples ({cluster_positive/total_samples*100:.1f}%)")
+            
+            # Display total read statistics
+            valid_reads = group[group['Total_reads'] != 'N/A']['Total_reads']
+            if len(valid_reads) > 0:
+                avg_total_reads = valid_reads.astype(int).mean()
+                print(f"    Average total reads: {avg_total_reads:.0f} reads/sample (retrieved from {len(valid_reads)}/{total_samples} samples)")
+            else:
+                print(f"    Total reads: Could not retrieve from FASTA files")
+            
+            # Detection rate for each clb gene
+            all_groups = [f"clb{chr(i)}" for i in range(ord('A'), ord('S')+1)]
+            detected_by_gene = {}
+            for gene in all_groups:
+                positive_samples = (group[gene] > 0).sum()
+                if positive_samples > 0:
+                    detected_by_gene[gene] = f"{positive_samples}/{total_samples} ({positive_samples/total_samples*100:.1f}%)"
+            
+            if detected_by_gene:
+                print(f"    Individual gene detection rates:")
+                for gene, rate in detected_by_gene.items():
+                    print(f"      {gene}: {rate}")
+    else:
+        # If no parameter grouping, show overall statistics
+        total_samples = len(df_all)
+        clbB_positive = df_all['pks_positive_clbB'].sum()
+        cluster_positive = df_all['pks_positive_cluster'].sum()
         
-        print(f"    clbB基準での陽性: {clbB_positive}/{total_samples} サンプル ({clbB_positive/total_samples*100:.1f}%)")
-        print(f"    クラスター基準での陽性: {cluster_positive}/{total_samples} サンプル ({cluster_positive/total_samples*100:.1f}%)")
-        
-        # 総リード数の統計を表示
-        valid_reads = group[group['Total_reads'] != 'N/A']['Total_reads']
-        if len(valid_reads) > 0:
-            avg_total_reads = valid_reads.astype(int).mean()
-            print(f"    平均総リード数: {avg_total_reads:.0f} リード/サンプル ({len(valid_reads)}/{total_samples} サンプルで取得)")
-        else:
-            print(f"    総リード数: FASTAファイルから取得できませんでした")
-        
-        # 各clb遺伝子の検出率
-        all_groups = [f"clb{chr(i)}" for i in range(ord('A'), ord('S')+1)]
-        detected_by_gene = {}
-        for gene in all_groups:
-            positive_samples = (group[gene] > 0).sum()
-            if positive_samples > 0:
-                detected_by_gene[gene] = f"{positive_samples}/{total_samples} ({positive_samples/total_samples*100:.1f}%)"
-        
-        if detected_by_gene:
-            print(f"    個別遺伝子検出率:")
-            for gene, rate in detected_by_gene.items():
-                print(f"      {gene}: {rate}")
+        print(f"\n  Overall Statistics:")
+        print(f"    Total samples: {total_samples}")
+        print(f"    Positive by clbB criterion: {clbB_positive}/{total_samples} samples ({clbB_positive/total_samples*100:.1f}%)")
+        print(f"    Positive by cluster criterion: {cluster_positive}/{total_samples} samples ({cluster_positive/total_samples*100:.1f}%)")
 
-print(f"\n解析完了！結果ファイル: {output_excel}")
-print(f"\n論文準拠の解析結果:")
-print(f"  - 各塩基配列一致度での比較が可能")
-print(f"  - 2つの判定基準（clbB単体、クラスター全体）を併用")
-print(f"  - 各サンプルの総リード数も含む詳細なデータ出力")
-print(f"  - ROC解析やメタ解析に適したデータ形式で出力")
-print(f"\n注意: 総リード数はFASTAファイルから取得されます。")
-print(f"FASTAファイルが見つからない場合は'N/A'と表示されます。")
+print(f"\nAnalysis complete! Result file: {output_excel}")
+print(f"\nFlexible pattern matching features:")
+print(f"  - Supports multiple sequencing platforms (DRR, SRR, ERR, custom)")
+print(f"  - Automatic detection of various file naming patterns")
+print(f"  - Flexible FASTA file matching")
+print(f"  - Robust parameter extraction from filenames")
+print(f"\nLiterature-compliant analysis results:")
+print(f"  - Enables comparison at different sequence identity thresholds")
+print(f"  - Employs two determination criteria (clbB alone, entire cluster)")
+print(f"  - Outputs detailed data including total read counts for each sample")
+print(f"  - Data format suitable for ROC analysis and meta-analysis")
+print(f"\nNote: Total read counts are retrieved from FASTA files.")
+print(f"'N/A' is displayed when FASTA files are not found.")
