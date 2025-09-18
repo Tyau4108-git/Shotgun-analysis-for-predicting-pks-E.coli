@@ -200,6 +200,42 @@ output_folder = "/path/to/output/folder"  # ← Modify this
 # ===== End User Configuration Area =====
 ```
 
+### 3.2 File Naming Customization
+
+The scripts are configured by default to process files with DRR numbers (DRR + 6 digits), but you may need to modify the file naming pattern according to your environment. If your files use different naming conventions, please use the following AI assistant prompt for customization:
+
+#### AI Assistant Customization Prompt
+
+```
+Please modify the following Python script.
+Currently it processes DRR number filenames (e.g., DRR123456),
+but my filename pattern is [enter your filename pattern here].
+
+Modification requirements:
+- Do not change the basic processing logic of the script
+- Modify only the filename-related portions
+- The variable name "drr" can be changed to an appropriate name if needed
+- Update the User Configuration Area descriptions to match the actual filenames
+
+Examples:
+- Current filenames: sample_1.fa, sample_2.fa → Change variable name to "sample_id"
+- Current filenames: SRR987654_1.fa, SRR987654_2.fa → Change variable name to "srr"
+- Current filenames: exp001_forward.fa, exp001_reverse.fa → Modify filename pattern appropriately
+
+[Paste your script here]
+```
+
+#### Usage Example
+
+For example, if your filenames are `sample001_forward.fa` and `sample001_reverse.fa`:
+
+```
+My filename pattern is "sample001_forward.fa" and "sample001_reverse.fa" format.
+Please modify the script to treat "sample001" as a variable and process "_forward.fa" and "_reverse.fa" as suffixes.
+```
+
+By using this AI assistant prompt, you can easily customize the scripts to match your specific file naming environment.
+
 #### BlastDB(for loop).sh Configuration (Important: Research Parameter Adjustment)
 
 ```bash
